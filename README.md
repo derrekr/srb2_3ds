@@ -6,6 +6,7 @@ A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
 * Download srb2_3ds from the latest release on Github and extract the files to /3ds/srb2_3ds on your SD card.
 * Download SRB2's game files [here](https://downloads.devkitpro.org/srb2_data.zip) or from [srb2.org](http://www.srb2.org/) and extract them to /3ds/srb2_3ds as well.
 	You may also copy the files to the root directory, but make sure config.cfg is located in the same directory as the game files.
+* Make sure you have dumped your DSP firmware and dspfirm.cdc is present.
 
 ## Building
 * Building requires 3ds-sdl and 3ds-sdl_mixer to be installed (use devkitPro's pacman).
