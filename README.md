@@ -13,7 +13,7 @@ A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
 ## Known Issues/Limitations
 * Does *NOT* run on o3DS devices. The Nintendo New3DS' HW allows higher CPU clock frequencies and adds another layer of cache.
 	On o3DS it's extremely laggy and would probably require modifications to the level design in order to run it at a decent FPS.
-* No streoscopic 3D rendering
+* No stereoscopic 3D rendering
 * No support for MIDI music
 * No netplay
 * Lower screen isn't really used
