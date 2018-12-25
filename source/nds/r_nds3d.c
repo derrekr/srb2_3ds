@@ -57,6 +57,7 @@
 
 #define MAX_FOG_DENSITY			255
 
+extern LightEvent workerInitialized;
 
 // XXX arbitrary near and far plane
 FCOORD NEAR_CLIPPING_PLANE = NZCLIP_PLANE;
@@ -85,7 +86,6 @@ static	int uLoc_projection, uLoc_modelView;
 static C3D_Mtx defaultModelView;
 static C3D_Mtx defaultProjection;
 // Special Sate
-static  u32			constPalCol;
 static	bool		statePalColor; 
 static	C3D_FogLut	*fogLUTs[MAX_FOG_DENSITY+1];
 // Misc
@@ -256,7 +256,7 @@ static void InitDefaultMatrices()
 					C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, true);
 }
 
-boolean NDS3D_Init(I_Error_t ErrorFunction)
+boolean NDS3D_Init()
 {	
 	NDS3D_driverLog("NDS3D_Init\n");
 
@@ -1051,6 +1051,10 @@ bool processRenderQueue(void)
 void NDS3D_Thread(void)
 {
 	N3DS_Print("NDS3D_Thread started\n");
+
+	NDS3D_Init();
+
+	LightEvent_Signal(&workerInitialized);
 
 	for(;;)
 	{

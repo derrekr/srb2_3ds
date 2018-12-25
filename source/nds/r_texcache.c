@@ -73,7 +73,6 @@ C3D_Tex *texCacheGetC3DTex(TextureInfo *info)
 TextureInfo *texCacheAdd(FTextureInfo *texInfo)
 {
 	TextureInfo *entry;
-	C3D_Tex *c3dTex;
 
 	entry = getFreeEntry();
 	assert(entry);

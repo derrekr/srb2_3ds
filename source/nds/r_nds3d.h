@@ -55,7 +55,7 @@ void NDS3D_ResetRenderStatsMeasureEnd(int part);
 
 #endif
 
-boolean NDS3D_Init(I_Error_t ErrorFunction);
+boolean NDS3D_Init();
 void NDS3D_Shutdown(void);
 void NDS3D_SetPalette(RGBA_t *ppal, RGBA_t *pgamma);
 void NDS3D_FinishUpdate();

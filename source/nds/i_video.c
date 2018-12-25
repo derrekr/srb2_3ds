@@ -56,6 +56,7 @@ extern consvar_t cv_ticrate;
 
 // -------------------------------------------------------
 
+LightEvent workerInitialized;
 static Thread workerThread;
 
 static u32 myPaletteData[256];
@@ -288,10 +289,11 @@ bool spawnWorkerThread(void)
 	s32 curCPU = svcGetProcessorID();
 	printf("main thread cpuID: %i\n", curCPU);
 
+	LightEvent_Init(&workerInitialized, RESET_ONESHOT);
 
 	/* Create worker */
 	// NOTE: Would actually work with a bad prio as well...
-	for (s32 prio = 0x22; ; prio++)
+	for (s32 prio = 0x30; ; prio++)
 	{
 		workerThread = threadCreate(workerThreadEntry, NULL, stackSize, prio, cpuID, true);
 		if (workerThread != NULL)
@@ -300,10 +302,11 @@ bool spawnWorkerThread(void)
 		}
 	}
 
-	svcSleepThread(1000u*1000u);
+	// Wait for worker thread to finish its initialization
+	LightEvent_Wait(&workerInitialized);
 
 
-	/* Opt main thead */
+	/* Push main thead priority to the limit */
 
 	svcGetThreadPriority(&actualPrio, CUR_THREAD_HANDLE);
 
@@ -319,16 +322,14 @@ bool spawnWorkerThread(void)
 	return true;
 }
 
-boolean NDS3DVIDEO_Init(I_Error_t ErrorFunction)
+boolean NDS3DVIDEO_Init()
 {	
-	NDS3D_driverLog("NDS3D_Init\n");
-
-	NDS3D_Init(ErrorFunction);
-
-	texCacheInit();
+	NDS3D_driverLog("NDS3DVIDEO_Init\n");
 
 	// Init render queue
 	queueInit();
+
+	texCacheInit();
 
 	if (!spawnWorkerThread())
 		return false;
