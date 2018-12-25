@@ -22,7 +22,6 @@ typedef struct
 
 UINT8 sound_started = false;
 
-static bool initialized;
 static Mix_Music *music;
 static UINT8 music_volume, sfx_volume;
 static double loop_point;
@@ -31,7 +30,7 @@ static boolean songpaused;
 
 static void SoundDriverInit(void)
 {
-	if (initialized)
+	if (sound_started)
 		return;
 
 	printf("SoundDriverInit!\n");
@@ -39,28 +38,23 @@ static void SoundDriverInit(void)
 	// Initialize SDL.
 	if (SDL_Init(SDL_INIT_AUDIO) < 0)
 	{
-		NDS3D_driverPanic("SDL_Init failed!");
+		printf("SDL_Init failed! %s\n", SDL_GetError());
+		return;
 	}
 
 	// Initialize SDL_mixer 
 	if (Mix_OpenAudio(SAMPLERATE, AUDIO_S16LSB, 2, 1024*4) < 0)
 	{
-		NDS3D_driverPanic("Mix_OpenAudio failed!");
+		printf("Mix_OpenAudio failed! %s\n", Mix_GetError());
+		return;
 	}
 
 	// Set number of channels being mixed
 	Mix_AllocateChannels(16);
 
-	initialized = true;
-
 	sound_started = 1;
 }
 
-static void ensureDriverInitialized()
-{
-	if(!initialized)
-		SoundDriverInit();
-}
 /*
 static void registerCacheForChunk(void *cache, Mix_Chunk *chunk)
 {
@@ -242,7 +236,7 @@ static Mix_Chunk *ds2chunk(void *stream)
 
 void I_StartupSound(void)
 {
-	ensureDriverInitialized();
+	SoundDriverInit();
 }
 
 void I_ShutdownSound(void){}
@@ -256,6 +250,9 @@ void *I_GetSfx(sfxinfo_t *sfx)
 	void *lump;
 	Mix_Chunk *chunk;
 	SDL_RWops *rw;
+
+	if (!sound_started)
+		return NULL;
 
 	if (sfx->lumpnum == LUMPERROR)
 		sfx->lumpnum = S_GetSfxLumpNum(sfx);
@@ -318,6 +315,9 @@ void I_FreeSfx(sfxinfo_t *sfx)
 
 INT32 I_StartSound(sfxenum_t id, UINT8 vol, UINT8 sep, UINT8 pitch, UINT8 priority, INT32 channel)
 {
+	if (!sound_started)
+		return 0;
+
 	UINT8 volume = (((UINT16)vol + 1) * (UINT16)sfx_volume) / 62; // (256 * 31) / 62 == 127
 	INT32 handle = Mix_PlayChannel(channel, S_sfx[id].data, 0);
 	Mix_Volume(handle, volume);
@@ -329,6 +329,9 @@ INT32 I_StartSound(sfxenum_t id, UINT8 vol, UINT8 sep, UINT8 pitch, UINT8 priori
 
 void I_StopSound(INT32 handle)
 {
+	if (!sound_started)
+		return;
+
 	Mix_HaltChannel(handle);
 }
 
@@ -486,7 +489,7 @@ void I_InitDigMusic(void)
 
 void I_ShutdownDigMusic(void)
 {
-	if (!initialized)
+	if (!sound_started)
 		return;
 
 	Mix_HaltMusic();
@@ -497,7 +500,7 @@ void I_ShutdownDigMusic(void)
 	// quit SDL_mixer
 	Mix_CloseAudio();
 
-	initialized = false;
+	sound_started = 0;
 }
 
 /// ------------------------
@@ -507,7 +510,9 @@ void I_ShutdownDigMusic(void)
 boolean I_LoadSong(char *data, size_t len)
 {
 	SDL_RWops *rw;
-	ensureDriverInitialized();
+
+	if (!sound_started)
+		return false;
 
 	if (music)
 		I_UnloadSong();
