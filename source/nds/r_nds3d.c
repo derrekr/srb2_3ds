@@ -269,6 +269,8 @@ boolean NDS3D_Init(I_Error_t ErrorFunction)
 
 	//C3D_CullFace(GPU_CULL_BACK_CCW );
 	C3D_CullFace(GPU_CULL_NONE);
+
+	C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
 	
 	vshaderSize = vshader_shbin_size;
 	if(vshaderSize == 0)
@@ -433,12 +435,23 @@ static void resetTextures()
 }
 
 
-static	u32		prevFogDensity;
-	static	u32		prevFogColor;
-	static	bool	fogEnabled;
+static	u32		prevFogDensity = -1;
+static	u32		prevFogColor = -1;
+static	bool	fogEnabled;
 
 static void setFog(u32 fogColor, u32 fogDensity)
 {
+	if (!cv_grfog.value)
+	{
+		if (fogEnabled)
+		{
+			fogEnabled = false;
+			C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
+		}
+		
+		return;
+	}
+
 	fogColor = NDS3D_Reverse32(fogColor);
 
 	NDS3D_driverLog("fogDensity %i, fogColor %lx\n", fogDensity, fogColor);
@@ -472,6 +485,7 @@ static void setFog(u32 fogColor, u32 fogDensity)
 		prevFogColor = fogColor;
 	}
 
+	fogEnabled = true;
 	C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
 }
 
