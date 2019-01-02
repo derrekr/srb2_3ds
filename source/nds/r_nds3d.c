@@ -86,8 +86,10 @@ static	int uLoc_projection, uLoc_modelView;
 static C3D_Mtx defaultModelView;
 static C3D_Mtx defaultProjection;
 // Special Sate
-static	bool		statePalColor; 
 static	C3D_FogLut	*fogLUTs[MAX_FOG_DENSITY+1];
+static	u32			prevFogDensity = -1;
+static	u32			prevFogColor = -1;
+static	bool		fogEnabled;
 // Misc
 static	C3D_Tex *prevTex;
 static	u32 clearCounter;
@@ -434,11 +436,6 @@ static void resetTextures()
 	prevTex = NULL;
 }
 
-
-static	u32		prevFogDensity = -1;
-static	u32		prevFogColor = -1;
-static	bool	fogEnabled;
-
 static void setFog(u32 fogColor, u32 fogDensity)
 {
 	if (!cv_grfog.value)
@@ -452,7 +449,9 @@ static void setFog(u32 fogColor, u32 fogDensity)
 		return;
 	}
 
+	/* Convert from 0RGB to 0BGR */
 	fogColor = NDS3D_Reverse32(fogColor);
+	fogColor >>= 8;
 
 	NDS3D_driverLog("fogDensity %i, fogColor %lx\n", fogDensity, fogColor);
 
@@ -562,10 +561,6 @@ void NDS3D_DrawPolygon(u32 surfColor, u32 geomIdx, FUINT iNumPts, FBITFIELD Poly
 		// If Modulated, mix the surface colour to the texture
 		if (PolyFlags & PF_Modulated)
 		{
-#ifdef DIAGNOSTIC
-			if (statePalColor)
-				NDS3D_driverPanic("NDS3D_DrawPolygon palette...!\n");
-#endif
 			color = surfColor;
 			prevColor = color;
 			
