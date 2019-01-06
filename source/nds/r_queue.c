@@ -28,7 +28,6 @@ static Handle eventAlmostEmpty;
 static Handle eventAllocOk;
 static bool want_eventNotEmpty, want_eventEmpty,
 			want_eventAlmostEmpty, want_eventAllocOk;
-static size_t allocCount;
 
 void queueDump();
 
@@ -198,8 +197,6 @@ queuePacket *queueAllocPacket()
 */
 	}
 
-	allocCount++;
-
 	return ringBuffer.mem + curOffsetW;
 }
 
@@ -298,16 +295,6 @@ float queueGetUsage()
 	}
 
 	return (float) diff / (float) ringBuffer.num;
-}
-
-size_t queueGetAllocCount()
-{
-	return allocCount;
-}
-
-void queueResetAllocCount()
-{
-	allocCount = 0;
 }
 
 void queueDump()

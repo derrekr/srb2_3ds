@@ -18,7 +18,6 @@ A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
 * No support for MIDI music
 * No netplay
 * Lower screen isn't really used
-* Missing walls (general OpenGL mode issue in srb2)
 * CEZ2 is extremely laggy
 
 ## Thanks
