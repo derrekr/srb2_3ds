@@ -24,7 +24,7 @@ static INT64 start_time; // as microseconds since the epoch
 #define CPAD_MAX_DELTA	160
 
 u32 __stacksize__ = 0x180000;
-u32 __ctru_linear_heap_size = 38 * 1024 * 1024;
+u32 __ctru_linear_heap_size = 40 * 1024 * 1024;
 
 //----------------------------
 
@@ -32,7 +32,7 @@ UINT32 I_GetFreeMem(UINT32 *total)
 {
 	*total = 128 * 1024 * 1024;
 	
-	return linearSpaceFree() + vramSpaceFree() + mappableSpaceFree();
+	return linearSpaceFree() + vramSpaceFree();
 }
 
 void I_StartupTimer(void)

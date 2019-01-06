@@ -19,13 +19,16 @@ typedef struct {
 	volatile size_t offr;
 } RingBuffer;
 
-const size_t ringBufferSize = 64 * 1024 * sizeof(queuePacket);
+const size_t ringBufferSize = 32 * 1024 * sizeof(queuePacket);
 
 static volatile RingBuffer ringBuffer;
 static Handle eventNotEmpty;
 static Handle eventEmpty;
 static Handle eventAlmostEmpty;
-static bool want_eventNotEmpty, want_eventEmpty, want_eventAlmostEmpty;
+static Handle eventAllocOk;
+static bool want_eventNotEmpty, want_eventEmpty,
+			want_eventAlmostEmpty, want_eventAllocOk;
+static size_t allocCount;
 
 void queueDump();
 
@@ -49,6 +52,8 @@ bool queueInit()
 		goto fail;
 	if (svcCreateEvent(&eventAlmostEmpty, RESET_ONESHOT) != 0)
 		goto fail;
+	if (svcCreateEvent(&eventAllocOk, RESET_ONESHOT) != 0)
+		goto fail;
 
 	return initRingBuffer();
 
@@ -56,6 +61,25 @@ fail:
 
 	NDS3D_driverPanic("queueInit failed!");
 	return false;
+}
+
+static size_t queueGetFreeSpace()
+{
+	size_t diff;
+	size_t offw = ringBuffer.offw;
+	size_t offr = ringBuffer.offr;
+
+	if (offw < offr)
+	{
+		diff = offr - offw;
+	}
+	else
+	{
+		diff = ringBuffer.num - offw;
+		diff += offr;
+	}
+
+	return diff;
 }
 
 bool queueCheckDiff(size_t maxDiff)
@@ -105,6 +129,15 @@ static void queueWakeupSleepers()
 			svcSignalEvent(eventAlmostEmpty);
 		}
 	}
+
+	if (want_eventAllocOk)
+	{
+		if (queueGetFreeSpace() >= 100u)
+		{
+			want_eventAllocOk = false;
+			svcSignalEvent(eventAllocOk);
+		}
+	}
 }
 
 bool queueWaitForEvent(int mode, s64 nanoseconds)
@@ -126,6 +159,12 @@ bool queueWaitForEvent(int mode, s64 nanoseconds)
 			want_eventAlmostEmpty = true;
 			event = &eventAlmostEmpty;
 			break;
+		case QUEUE_EVENT_ALLOC_OK:
+			want_eventAllocOk = true,
+			event = &eventAllocOk;
+			break;
+		default:
+			event = NULL;
 	}
 
 	/* First, wake up any other sleeping thread */
@@ -141,18 +180,27 @@ bool queueWaitForEvent(int mode, s64 nanoseconds)
 
 queuePacket *queueAllocPacket()
 {
-	size_t curOffset = ringBuffer.offw;
+	size_t curOffsetW = ringBuffer.offw;
+	size_t curOffsetR = ringBuffer.offr;
 
-#ifdef DIAGNOSTIC
-	if (curOffset < ringBuffer.offr && curOffset + 10 >= ringBuffer.offr)
+	if (curOffsetW < curOffsetR && curOffsetW + 1 >= curOffsetR)
 	{
-		queueDump();
-		NDS3D_driverPanic("Queue overflow! offw 0x%X, offr 0x%X", curOffset, ringBuffer.offr);
-	}
+		return NULL;
+/*
+#ifdef DIAGNOSTIC
+		if (curOffsetW < curOffsetR && curOffsetW + 10 >= curOffsetR)
+		{
+			queueDump();
+			NDS3D_driverPanic("Queue overflow! offw 0x%X, offr 0x%X",
+				curOffsetW, curOffsetR);
+		}
 #endif
-	//nextOffset = (curOffset + 1) % ringBuffer.num;
+*/
+	}
 
-	return ringBuffer.mem + curOffset;
+	allocCount++;
+
+	return ringBuffer.mem + curOffsetW;
 }
 
 void queueEnqueuePacket(queuePacket *packet)
@@ -221,6 +269,14 @@ queuePacket *queueDequeuePacket()
 			svcSignalEvent(eventAlmostEmpty);
 		}
 	}
+	else if (want_eventAllocOk)
+	{
+		if (queueGetFreeSpace() >= 100u)
+		{
+			want_eventAllocOk = false;
+			svcSignalEvent(eventAllocOk);
+		}
+	}
 
 	return packet;
 }
@@ -242,6 +298,16 @@ float queueGetUsage()
 	}
 
 	return (float) diff / (float) ringBuffer.num;
+}
+
+size_t queueGetAllocCount()
+{
+	return allocCount;
+}
+
+void queueResetAllocCount()
+{
+	allocCount = 0;
 }
 
 void queueDump()

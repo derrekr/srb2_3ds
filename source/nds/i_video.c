@@ -62,8 +62,6 @@ static Thread workerThread;
 static u32 myPaletteData[256];
 static TextureInfo *texCurrent;
 
-static bool frameEnded;
-
 // fog state
 static u32 fogColor;
 static u32 fogDensity;
@@ -77,17 +75,36 @@ static bool queueWaitEmptyTimeout()
 	return queueWaitForEvent(QUEUE_EVENT_EMPTY, nanoseconds);
 }
 
+// Never returns NULL
+static queuePacket *queueAllocPacketSafe()
+{
+	queuePacket *p = queueAllocPacket();
+	if (!p)
+	{
+		// We are close to overflowing the queue, so wait for the worker thread.
+		queueWaitForEvent(QUEUE_EVENT_ALLOC_OK, U64_MAX);
+		/* should work now */
+		p = queueAllocPacket();
+		if (!p)
+		{
+			NDS3D_driverPanic("Failed to alloc queue packet.");
+		}
+	}
+
+	return p;
+}
+
 static void stallAndFlushTextures()
 {
 	queueWaitEmptyTimeout();
 
-	queuePacket *packet = queueAllocPacket();
+	queuePacket *packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_FLUSH;
 	queueEnqueuePacket(packet);
 
 	queueWaitEmptyTimeout();
 
-	packet = queueAllocPacket();
+	packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_DUMMY;
 	queueEnqueuePacket(packet);
 
@@ -127,11 +144,6 @@ void NDS3DVIDEO_DrawPolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iN
 	if (texCurrent == NULL)
 		return;
 
-	if (frameEnded)
-	{
-		queueWaitForEvent(QUEUE_EVENT_ALMOST_EMPTY, U64_MAX);
-		frameEnded = false;
-	}
 #ifdef N3DS_PERF_MEASURE
 	if (prevTex != texCurrent)
 	{
@@ -148,7 +160,7 @@ void NDS3DVIDEO_DrawPolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iN
 
 	size_t bufIndex = ((size_t)pOutVerts - (size_t)geometryBuf)/sizeof(*pOutVerts);
 
-	queuePacket *packet = queueAllocPacket();
+	queuePacket *packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_DRAW;
 	packet->args.argsDraw.surfColor = pSurf ? pSurf->FlatColor.rgba : 0xFFFFFFFF;
 	packet->args.argsDraw.geometryIdx = bufIndex;
@@ -167,7 +179,7 @@ void NDS3DVIDEO_DrawPolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iN
 
 void NDS3DVIDEO_SetBlend(FBITFIELD PolyFlags)
 {
-	queuePacket *packet = queueAllocPacket();
+	queuePacket *packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_BLEND;
 	packet->args.argsBlend.PolyFlags = PolyFlags;
 	queueEnqueuePacket(packet);
@@ -186,7 +198,7 @@ void NDS3DVIDEO_ClearBuffer(FBOOLEAN ColorMask, FBOOLEAN DepthMask, FRGBAFloat *
 	}
 	else clearColor = 0xFFFFFFFF;
 
-	queuePacket *packet = queueAllocPacket();
+	queuePacket *packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_CLEAR;
 	packet->args.argsClear.ColorMask = ColorMask;
 	packet->args.argsClear.DepthMask = DepthMask;
@@ -238,7 +250,7 @@ void NDS3DVIDEO_SetTransform(FTransform *ptransform)
 		return;
 	prevTransf = ptransform;
 
-	queuePacket *packet = queueAllocPacket();
+	queuePacket *packet = queueAllocPacketSafe();
 
 	if (ptransform)
 	{
@@ -255,7 +267,7 @@ void NDS3DVIDEO_SetTransform(FTransform *ptransform)
 
 void NDS3DVIDEO_FinishUpdate(INT32 waitvbl)
 {
-	queuePacket *packet = queueAllocPacket();
+	queuePacket *packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_FINISH;
 	/* no args needed */
 	queueEnqueuePacket(packet);
@@ -343,24 +355,26 @@ void NDS3DVIDEO_Shutdown(void)
 
 	queueWaitEmptyTimeout();
 
-	queuePacket *packet = queueAllocPacket();
-	packet = queueAllocPacket();
+	queuePacket *packet = queueAllocPacketSafe();
+	packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_DUMMY;
 	queueEnqueuePacket(packet);
 
 	queueWaitEmptyTimeout();
 
-	packet = queueAllocPacket();
+	packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_EXIT;
 	queueEnqueuePacket(packet);
 
 	queueWaitEmptyTimeout();
 
-	packet = queueAllocPacket();
+	packet = queueAllocPacketSafe();
 	packet->type = CMD_TYPE_DUMMY;
 	queueEnqueuePacket(packet);
 
 	queueWaitEmptyTimeout();
+
+	threadJoin(workerThread, U64_MAX);
 
 	printf("OK, bye!\n");
 
@@ -662,11 +676,36 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	tex = texCacheGetC3DTex(texCurrent);
 
 
+	/* Figure out if we want to use mipmaps */
+
+	bool useMipMap;
+
+	extern gamestate_t gamestate;
+	switch (gamestate)
+	{
+		case GS_INTRO:
+		case GS_CUTSCENE:
+		case GS_TITLESCREEN:
+			useMipMap = false;
+			break;
+		default:
+			useMipMap = true;
+	}
+
+
+	/* Allocate texture entity using citro3d */
+
 	unsigned attempts = 0;
+	bool success;
 
 retry:
 
-	if(!C3D_TexInit(tex, width * scale, height * scale, gpuFormat))
+	if (useMipMap)
+		success = C3D_TexInitMipmap(tex, width * scale, height * scale, gpuFormat);
+	else
+		success = C3D_TexInit(tex, width * scale, height * scale, gpuFormat);
+
+	if(!success)
 	{
 		/* Ah crap, we are low on memory... */
 		if (attempts <= 0)
@@ -719,7 +758,11 @@ retry:
 	
 	convertToGpuTexture(texData, width, height, tex->data, gpuFormat, texPixelSize);
 
+	if (useMipMap)
+		C3D_TexGenerateMipmap(tex, GPU_TEXFACE_2D);
+
 	//C3D_TexSetFilter(tex, GPU_LINEAR, GPU_NEAREST);
+	//C3D_TexSetFilterMipmap(tex, GPU_NEAREST);
 	
 	//NDS3D_driverMemDump(tex->data, width * height * texPixelSize);
 
@@ -742,6 +785,50 @@ void NDS3DVIDEO_FlushScreenTextures(void)
 {
 	stallAndFlushTextures();
 }
+
+/*
+static bool startWipe;
+
+void NDS3DVIDEO_StartScreenWipe()
+{
+	printf("NDS3DVIDEO_StartScreenWipe\n");
+	startWipe = true;
+}
+
+void NDS3DVIDEO_EndScreenWipe()
+{
+	printf("NDS3DVIDEO_EndScreenWipe\n");
+}
+
+void NDS3DVIDEO_DoScreenWipe(float counter)
+{
+	return;
+	static bool fadeIn;
+	u8 c;
+	u32 fadeColor;
+
+	if (startWipe)
+	{
+		fadeIn = !fadeIn;
+		startWipe = false;
+	}
+
+	if (counter == 1.0f)
+		return;
+
+	{
+		c = counter * 255.0f;
+		fadeColor = RGB8A_TO_UINT32(c, c, c, c);
+	}
+
+	printf("%x ", c);
+
+	queuePacket *packet = queueAllocPacketSafe();
+	packet->type = CMD_TYPE_FADE;
+	packet->args.argsFade.fadeColor = fadeColor;
+	queueEnqueuePacket(packet);
+}
+*/
 
 void I_StartupGraphics(void)
 {
@@ -829,12 +916,17 @@ void I_FinishUpdate(void)
 {
 	static unsigned int frameCounter;
 
-	frameEnded = true;
-
 	if (cv_ticrate.value)
         SCR_DisplayTicRate();
 
-    //printf("\x1b[29;1Hgpu: %5.2f%%  cpu: %5.2f%%  buf:%5.2f%%\n", C3D_GetDrawingTime()*6, C3D_GetProcessingTime()*6, C3D_GetCmdBufUsage()*100);
+    /*
+    extern size_t queueGetAllocCount();
+
+    printf("\x1b[29;1Hgpu: %5.2f%%   cpu: %5.2f%%   %i    \r",
+    	C3D_GetDrawingTime()*6, C3D_GetProcessingTime()*6, queueGetAllocCount());
+
+    queueResetAllocCount();
+    */
 	
 	/*
 	printf("L:0x%x,V:0x%x,Q:%f%,T:%i\r",
@@ -855,8 +947,6 @@ void I_FinishUpdate(void)
 		frameCounter = 0;
 	}
 	else frameCounter++;
-
-	//svcSleepThread(1000LL*1000LL*200);
 
 
 #ifdef N3DS_PERF_MEASURE

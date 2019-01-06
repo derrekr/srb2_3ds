@@ -116,7 +116,8 @@ void NDS3D_driverPanic(const char *s, ...)
 	printf("\n\n********* PANIC *********\n");
 	printf("%s\n", tmp);
 	
-	svcSleepThread(1000LL * 1000LL * 1000LL * 5);
+	printf("Shutting down in 10 seconds...\n");
+	svcSleepThread(1000LL * 1000LL * 1000LL * 10);
 	assert(0);	// exit
 }
 

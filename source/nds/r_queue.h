@@ -10,6 +10,7 @@
 
 
 #define CMD_TYPE_DUMMY		0
+#define CMD_TYPE_FADE		1
 #define CMD_TYPE_FINISH		2
 #define CMD_TYPE_DRAW		3
 #define CMD_TYPE_BLEND		4
@@ -67,6 +68,11 @@ typedef struct
 {
 } ArgsFinish;
 
+typedef struct 
+{
+	u32			fadeColor;
+} ArgsFade;
+
 typedef struct
 {
 	u32 type;
@@ -79,13 +85,15 @@ typedef struct
 		ArgsTransform argsTransform;
 		ArgsTransformReset argsTransformReset;
 		ArgsFinish argsFinish;
+		ArgsFade argsFade;
 	} args;
 } queuePacket;
 
 enum {
 	QUEUE_EVENT_NOT_EMPTY,
 	QUEUE_EVENT_EMPTY,
-	QUEUE_EVENT_ALMOST_EMPTY
+	QUEUE_EVENT_ALMOST_EMPTY,
+	QUEUE_EVENT_ALLOC_OK
 };
 
 

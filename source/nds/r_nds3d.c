@@ -61,7 +61,7 @@ extern LightEvent workerInitialized;
 
 // XXX arbitrary near and far plane
 FCOORD NEAR_CLIPPING_PLANE = NZCLIP_PLANE;
-FCOORD FAR_CLIPPING_PLANE = 12000.0f;
+FCOORD FAR_CLIPPING_PLANE = 20000.0f;
 const float fov = 62.0f;
 
 // Render target
@@ -93,6 +93,8 @@ static	bool		fogEnabled;
 // Misc
 static	C3D_Tex *prevTex;
 static	u32 clearCounter;
+static  bool fading;
+static  u32 fadeColor;
 
 static n3dsRenderStats renderStats;
 
@@ -576,6 +578,23 @@ void NDS3D_DrawPolygon(u32 surfColor, u32 geomIdx, FUINT iNumPts, FBITFIELD Poly
 			C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 		}
 	}
+
+	/*
+		env = C3D_GetTexEnv(2);
+	
+	if (fading)
+	{
+		C3D_TexEnvSrc(env, C3D_RGB, GPU_PREVIOUS, GPU_CONSTANT, GPU_CONSTANT);
+		C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_ONE_MINUS_SRC_ALPHA);
+		C3D_TexEnvFunc(env, C3D_RGB, GPU_INTERPOLATE);
+		C3D_TexEnvColor(env, fadeColor);
+	}
+	else
+	{
+		C3D_TexEnvSrc(env, C3D_Both, GPU_PREVIOUS, 0, 0);
+			C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+	}
+	*/
 	/*
 	if(PolyFlags & (PF_ForceWrapX | PF_ForceWrapY))
 	{
@@ -798,7 +817,7 @@ void NDS3D_ClearBuffer(FBOOLEAN ColorMask, FBOOLEAN DepthMask, u32 ClearColor)
 	}
 
 	{
-		if(clearCounter >= 8)
+		if(clearCounter >= 10)
 		{
 #ifdef DIAGNOSTIC
 			//printf("clearCounter at max!\n");
@@ -924,6 +943,16 @@ void NDS3D_SetTransform(FTransform *ptransform)
 	renderStatsEndMeasure();
 }
 
+void setFading(u32 color)
+{
+	if (color >= 10 && color <= 0xffff0000)
+	{
+		fading = true;
+		fadeColor = color;
+	}
+	else fading = false;
+}
+
 /* Returns true if we actually have drawn something */
 bool processRenderQueue(void)
 {
@@ -989,6 +1018,12 @@ bool processRenderQueue(void)
 			}
 			*/
 
+			case CMD_TYPE_FADE:
+			{
+				//setFading(packet->args.argsFade.fadeColor);
+				break;
+			}
+
 			case CMD_TYPE_DRAW:
 			{
 				u32			surfColor = packet->args.argsDraw.surfColor;
@@ -1024,7 +1059,7 @@ bool processRenderQueue(void)
 			case CMD_TYPE_EXIT:
 			{
 				NDS3D_Shutdown();
-				for(;;) svcSleepThread(1000*1000);
+				threadExit(0);
 			}
 
 			default:
@@ -1058,18 +1093,16 @@ void NDS3D_Thread(void)
 
 next:
 		/* Wait for incoming packets */
-		//printf("wait1\n");
-/*
 		if (!queuePollForDequeue())
 			queueWaitForEvent(QUEUE_EVENT_NOT_EMPTY, U64_MAX);
-*/		
+
+		/*
 		do {
 			//printf("cmd wait\n");
 		} while(!queuePollForDequeue());
-		
+		*/
 
 		/* We are now in a frame ... */
-		//printf("ren\n");
 
 		if (!processRenderQueue())
 		{
