@@ -227,8 +227,7 @@ void I_Quit(void)
 {
 	printf("EXIT!\n");
 	I_ShutdownDigMusic();
-	C3D_Fini();
-	gfxExit();
+	I_ShutdownGraphics();
 	exit(0);
 }
 
@@ -389,6 +388,14 @@ INT32 I_StartupSystem(void)
         }
 
 		/* Could not open file */
+	}
+	else
+	{
+		// CIA version
+		chdir("sdmc:/3ds/srb2_3ds/");
+		strcpy(exePath, "sdmc:/3ds/srb2_3ds");
+		wadAtExePath = true;
+		return 0;
 	}
 	
 	if (chdir("sdmc:/") != 0)

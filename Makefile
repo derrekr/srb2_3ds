@@ -49,7 +49,8 @@ GFXBUILD	:=	$(BUILD)
 APP_TITLE	:=	SRB2 3DS
 APP_DESCRIPTION	:=	Sonic Robo Blast 2
 APP_AUTHOR	:=	STJr & derrek
-ICON 		:=	icon.png
+META_DIR	:=	meta
+ICON 		:=	$(META_DIR)/icon.png
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -282,7 +283,7 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: all clean
+.PHONY: all clean release
 
 #---------------------------------------------------------------------------------
 all:
@@ -292,7 +293,7 @@ all:
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf
+	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).cia $(OUTPUT).smdh $(TARGET).elf
 
 #---------------------------------------------------------------------------------
 release: clean
@@ -300,9 +301,9 @@ release: clean
 	@$(MAKE) -j4 --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 	@echo $(VERS_STRING)
 	@7z a -mx -m0=ARM -m1=LZMA $(TARGET)$(VERS_STRING).7z \
-		$(TARGET).3dsx $(TARGET).smdh config.cfg README.md
+		$(TARGET).3dsx $(TARGET).smdh $(META_DIR)/config.cfg README.md
 	@7z a -mx $(TARGET)$(VERS_STRING).zip \
-		$(TARGET).3dsx $(TARGET).smdh config.cfg README.md
+		$(TARGET).3dsx $(TARGET).smdh $(META_DIR)/config.cfg README.md
 
 #---------------------------------------------------------------------------------
 else
@@ -310,7 +311,7 @@ else
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
+$(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS) $(OUTPUT).cia
 
 $(OFILES_SOURCES) : $(HFILES)
 
@@ -329,6 +330,13 @@ $(OUTPUT).elf	:	$(OFILES)
 %.t3x.o	%_t3x.h :	%.t3x
 #---------------------------------------------------------------------------------
 	@$(bin2o)
+
+#---------------------------------------------------------------------------------
+%.cia: %.elf
+#---------------------------------------------------------------------------------
+	@makerom -f cia -target t -exefslogo -o $@ -elf $< -rsf $(TOPDIR)/$(META_DIR)/app.rsf \
+		-banner $(TOPDIR)/$(META_DIR)/banner.bin -icon $(OUTPUT).smdh
+	@echo built ... $(notdir $@)
 
 #---------------------------------------------------------------------------------
 # rules for assembling GPU shaders

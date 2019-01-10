@@ -99,6 +99,7 @@ void NDS3D_driverMemDump(void*buf, size_t size)
 	findex++;
 }
 
+__attribute__((noreturn))
 void NDS3D_driverPanic(const char *s, ...)
 {
 	char tmp[512];
@@ -118,7 +119,7 @@ void NDS3D_driverPanic(const char *s, ...)
 	
 	printf("Shutting down in 10 seconds...\n");
 	svcSleepThread(1000LL * 1000LL * 1000LL * 10);
-	assert(0);	// exit
+	exit(-1);
 }
 
 void NDS3D_driverHeapStatus()
