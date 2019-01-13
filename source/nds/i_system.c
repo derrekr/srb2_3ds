@@ -24,7 +24,9 @@ static INT64 start_time; // as microseconds since the epoch
 #define CPAD_MAX_DELTA	160
 
 u32 __stacksize__ = 0x180000;
-u32 __ctru_linear_heap_size = 40 * 1024 * 1024;
+u32 __ctru_linear_heap_size = 46 * 1024 * 1024;
+
+float sliderState = 0.0f;
 
 //----------------------------
 
@@ -37,7 +39,6 @@ UINT32 I_GetFreeMem(UINT32 *total)
 
 void I_StartupTimer(void)
 {
-	printf("I_StartupTimer()\n");
 	start_time = osGetTime(); 
 }
 
@@ -102,6 +103,8 @@ void I_GetEvent(void)
 	up = keysUp();
 	down = keysDown();
 
+	sliderState = osGet3DSliderState();
+
 	{
 		/* Circle Pad */
 
@@ -113,9 +116,9 @@ void I_GetEvent(void)
 		event.data1 = 0;
 		event.data3 = cpos.dy * amplifier;
 
-		// for the x axis (turning) we want a small damper
 		int res = cpos.dx * amplifier;
-		event.data2 = (int) ((float) res * 0.9f);
+		// for the x axis (turning) we want a small damper
+		event.data2 = (int) ((float) res * 0.88f);
 		
 		D_PostEvent(&event);
 
@@ -474,5 +477,3 @@ const char *I_ClipboardPaste(void)
 }
 
 void I_RegisterSysCommands(void) {}
-
-#include "../sdl/dosstr.c"

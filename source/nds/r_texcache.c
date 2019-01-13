@@ -95,7 +95,16 @@ void texCacheFlush(unsigned purgeLevel, TextureInfo **curTexInfo)
 		case 0:		unusedThreshold = 10;
 					force = false;
 					break;
-		case 1:		unusedThreshold = 3;
+		case 1:		unusedThreshold = 8;
+					force = false;
+					break;
+		case 2:		unusedThreshold = 6;
+					force = false;
+					break;
+		case 3:		unusedThreshold = 4;
+					force = false;
+					break;
+		case 4:		unusedThreshold = 3;
 					force = false;
 					break;
 		default:	unusedThreshold = 0;

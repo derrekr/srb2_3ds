@@ -93,14 +93,20 @@ enum {
 	QUEUE_EVENT_NOT_EMPTY,
 	QUEUE_EVENT_EMPTY,
 	QUEUE_EVENT_ALMOST_EMPTY,
-	QUEUE_EVENT_ALLOC_OK
+	QUEUE_EVENT_ALLOC_OK,
+	QUEUE_EVENT_FRAME_DONE
 };
 
 
 bool queueInit();
 queuePacket *queueAllocPacket();
+bool queueWaitForEvent(int mode, s64 nanoseconds);
 void queueEnqueuePacket(queuePacket *packet);
 bool queuePollForDequeue();
 queuePacket *queueDequeuePacket();
+void queueCreateCheckPoint();
+void queueRestoreCheckPoint();
 float queueGetUsage();
-
+u32 queueGetFrameProgress();
+void queueWaitForFrameProgress();
+void queueNotifyFrameProgress();

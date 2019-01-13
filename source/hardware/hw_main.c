@@ -128,7 +128,7 @@ static consvar_t cv_grbeta = {"gr_beta", "0", 0, CV_Unsigned, NULL, 0, NULL, NUL
 static float HWRWipeCounter = 1.0f;
 consvar_t cv_grrounddown = {"gr_rounddown", "Off", 0, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_grfov = {"gr_fov", "90", CV_FLOAT|CV_CALL, grfov_cons_t, CV_grFov_OnChange, 0, NULL, NULL, 0, 0, NULL};
-consvar_t cv_grfogdensity = {"gr_fogdensity", "150", CV_SAVE|CV_CALL|CV_NOINIT, CV_Unsigned,
+consvar_t cv_grfogdensity = {"gr_fogdensity", "100", CV_SAVE|CV_CALL|CV_NOINIT, CV_Unsigned,
                              CV_FogDensity_ONChange, 0, NULL, NULL, 0, 0, NULL};
 
 // Unfortunately, this can no longer be saved..
@@ -5563,12 +5563,12 @@ static void HWR_DrawSkyBackground(player_t *player)
 	//         because it's called just after clearing the screen
 	//         and thus, the near clipping plane is set to 3.99
 	// Sryder: Just use the near clipping plane value then
-	v[0].x = v[3].x = -ZCLIP_PLANE-1;
-	v[1].x = v[2].x =  ZCLIP_PLANE+1;
-	v[0].y = v[1].y = -ZCLIP_PLANE-1;
-	v[2].y = v[3].y =  ZCLIP_PLANE+1;
+	v[0].x = v[3].x = -1150-1;
+	v[1].x = v[2].x =  1150+1;
+	v[0].y = v[1].y = -1000-1;
+	v[2].y = v[3].y =  1090+1;
 
-	v[0].z = v[1].z = v[2].z = v[3].z = ZCLIP_PLANE+1;
+	v[0].z = v[1].z = v[2].z = v[3].z = 1000+1;
 
 	// X
 
@@ -6199,6 +6199,10 @@ void HWR_AddCommands(void)
 	CV_RegisterVar(&cv_grrounddown);
 	CV_RegisterVar(&cv_grfov);
 	CV_RegisterVar(&cv_grfogdensity);
+#if defined(_NDS)
+    extern consvar_t cv_3dsfoclen;
+    CV_RegisterVar(&cv_3dsfoclen);
+#endif
 	CV_RegisterVar(&cv_grfiltermode);
 	CV_RegisterVar(&cv_granisotropicmode);
 	CV_RegisterVar(&cv_grcorrecttricks);

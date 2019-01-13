@@ -1,6 +1,6 @@
 BasicInfo:
-  Title                   : "adasds"
-  ProductCode             : "CTR-A"
+  Title                   : "Sonic Roboblast 2 3DS"
+  ProductCode             : "CTR-SRB2-3DS"
   ContentType             : Application
   Logo                    : Homebrew
 
@@ -29,10 +29,6 @@ AccessControlInfo:
 
   # Exheader Format Version
   DescVersion                   : 2
-  
-  # Minimum Required Kernel Version (below is for 4.5.0)
-  ReleaseKernelMajor            : "02"
-  ReleaseKernelMinor            : "33" 
 
   # ExtData
   UseExtSaveData                : false # enables ExtData       

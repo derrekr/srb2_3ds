@@ -40,10 +40,6 @@
 #include "r_texcache.h"
 #include "nds_utils.h"
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 // Used to transfer the final rendered display to the framebuffer
 #define DISPLAY_TRANSFER_FLAGS \
 	(GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
@@ -64,8 +60,9 @@ FCOORD NEAR_CLIPPING_PLANE = NZCLIP_PLANE;
 FCOORD FAR_CLIPPING_PLANE = 20000.0f;
 const float fov = 62.0f;
 
-// Render target
-static	C3D_RenderTarget *	target;
+// Render targets
+static	C3D_RenderTarget *	targetLeft;
+static	C3D_RenderTarget *	targetRight;
 static	bool				drawing;
 
 // Buffer and Attribute info
@@ -84,7 +81,6 @@ static	shaderProgram_s shaderProgram;
 static	int uLoc_projection, uLoc_modelView;
 // Matrices
 static C3D_Mtx defaultModelView;
-static C3D_Mtx defaultProjection;
 // Special Sate
 static	C3D_FogLut	*fogLUTs[MAX_FOG_DENSITY+1];
 static	u32			prevFogDensity = -1;
@@ -96,6 +92,9 @@ static	u32 clearCounter;
 static  bool fading;
 static  u32 fadeColor;
 
+static float iod;
+static float focalLength;
+
 static n3dsRenderStats renderStats;
 
 
@@ -104,6 +103,19 @@ static n3dsRenderStats renderStats;
 
 static void InitRendererMode(void);
 
+static bool get3DSettings(float *_iod, float *_foclen)
+{
+	extern float sliderState;
+	extern consvar_t cv_3dsfoclen;
+
+	*_iod = -sliderState/4;
+	*_foclen = ((float) (cv_3dsfoclen.value / 10)) / 10.0f;
+
+	if (sliderState == 0.0f)
+		return false;	// 3d not enabled
+
+	return true;
+}
 
 void *I_InitVertexBuffer(const size_t geoBufSize)
 {
@@ -242,32 +254,33 @@ static void InitTextureUnits()
 	C3D_TexEnv *env;
 
 	env = C3D_GetTexEnv(0);
-	TexEnv_Init(env);
-	C3D_TexEnvOp(env, C3D_Both, 0, 0, 0);
+	C3D_TexEnvInit(env);
+	C3D_TexEnvOpRgb(env, 0, 0, 0);
+	C3D_TexEnvOpAlpha(env, 0, 0, 0);
 
 	env = C3D_GetTexEnv(1);
-	TexEnv_Init(env);
-	C3D_TexEnvOp(env, C3D_Both, 0, 0, 0);
+	C3D_TexEnvInit(env);
+	C3D_TexEnvOpRgb(env, 0, 0, 0);
+	C3D_TexEnvOpAlpha(env, 0, 0, 0);
 }
-
 static void InitDefaultMatrices()
 {
 	Mtx_Identity(&defaultModelView);
-	Mtx_Identity(&defaultProjection);
 
 	Mtx_Scale(&defaultModelView, 1.0f, 0.6f, 1.0f);	// XXX arbitrary
-	Mtx_PerspTilt(&defaultProjection, C3D_AngleFromDegrees(fov),
-					C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, true);
 }
 
 boolean NDS3D_Init()
 {	
 	NDS3D_driverLog("NDS3D_Init\n");
 
-	// Initialize the render target
-	target = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
-	C3D_RenderTargetSetClear(target, C3D_CLEAR_ALL, 0, 0);
-	C3D_RenderTargetSetOutput(target, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
+	// Initialize the render targets
+	targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+	targetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+	C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
+	C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, 0, 0);
+	C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
+	C3D_RenderTargetClear(targetRight, C3D_CLEAR_ALL, 0, 0);
 	
 	InitTextureUnits();
 
@@ -316,8 +329,6 @@ void NDS3D_Shutdown(void)
 	// Free the shader program
 	shaderProgramFree(&shaderProgram);
 	DVLB_Free(vshader_dvlb);
-
-	NDS3D_driverPanic("Shutdown...!\n");
 	
 	C3D_Fini();
 }
@@ -347,7 +358,8 @@ static bool ensureFrameBegin()
 
 	C3D_FrameBegin(0);
 
-	C3D_FrameDrawOn(target);
+	C3D_FrameDrawOn(targetLeft);
+	C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, 0, 0);
 	drawing = true;
 
 	renderStats.msWaiting = osGetTime() - time;
@@ -355,20 +367,6 @@ static bool ensureFrameBegin()
 	renderStatsLogFrameLiveness(true);
 	
 	//NDS3D_driverLog("Began a new frame\n");
-
-	return true;
-}
-
-static bool tryFrameBegin()
-{
-	if(drawing)
-		return false;
-
-	if(!C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
-		return false;
-
-	C3D_FrameDrawOn(target);
-	drawing = true;
 
 	return true;
 }
@@ -390,41 +388,6 @@ void NDS3D_FinishUpdate()
 	}
 	
 	//NDS3D_driverLog("NDS3D_FinishUpdate done\n");
-}
-
-static void debugTraceDrawPolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iNumPts, FBITFIELD PolyFlags)
-{
-	NDS3D_driverLog("pOutVerts dump:\n");
-	
-	for(int i=0; i<iNumPts; i++)
-	{
-		NDS3D_driverLog("v%i: x %f, y %f, z %f\n", i, pOutVerts->x,  pOutVerts->y,  pOutVerts->z);
-		/*
-		pOutVerts->y *= i%2 ? 1.2f : 0.9f;
-		pOutVerts->x *= i%2 ? 1.2f : 0.9f;
-		pOutVerts->z *= i%2 ? 1.2f : 0.9f;
-		*/
-		/*
-		if(pOutVerts->x < -1.0f || pOutVerts->x > 1.0f ||
-			pOutVerts->y < -1.0f || pOutVerts->y > 1.0f ||
-			pOutVerts->z < -1.0f || pOutVerts->z > 1.0f)
-			NDS3D_driverPanic("Invalid vertex coords!\n");
-		*/
-		NDS3D_driverLog("\tsow %f, tow %f\n", pOutVerts->sow,  pOutVerts->tow);
-		/*
-		if(pOutVerts->sow < -1.0f || pOutVerts->sow > 1.0f ||
-			pOutVerts->tow < -1.0f || pOutVerts->tow > 1.0f)
-			NDS3D_driverPanic("Invalid tex coords!\n");
-		*/
-
-		pOutVerts++;
-	}
-	
-	if(pSurf)
-	{
-		u32 color = pSurf->FlatColor.rgba;
-		NDS3D_driverLog("surface col: 0x%X\n", color);
-	}
 }
 
 static inline void setCurrentTexture(C3D_Tex *tex)
@@ -455,7 +418,7 @@ static void setFog(u32 fogColor, u32 fogDensity)
 	fogColor = NDS3D_Reverse32(fogColor);
 	fogColor >>= 8;
 
-	NDS3D_driverLog("fogDensity %i, fogColor %lx\n", fogDensity, fogColor);
+	//NDS3D_driverLog("fogDensity %i, fogColor %lx\n", fogDensity, fogColor);
 
 	if(prevFogDensity != fogDensity)
 	{
@@ -817,10 +780,10 @@ void NDS3D_ClearBuffer(FBOOLEAN ColorMask, FBOOLEAN DepthMask, u32 ClearColor)
 	}
 
 	{
-		if(clearCounter >= 10)
+		if(clearCounter >= 256)
 		{
 #ifdef DIAGNOSTIC
-			//printf("clearCounter at max!\n");
+			printf("clearCounter at max!\n");
 #endif
 			renderStatsEndMeasure();
 			return;
@@ -923,8 +886,13 @@ void NDS3D_SetTransform(FTransform *ptransform)
 		Mtx_RotateY(&m, C3D_AngleFromDegrees(ptransform->angley + 270.0f), true);
 		Mtx_Translate(&m, -ptransform->x, -ptransform->z, -ptransform->y, true);
 		
+		/*
 		Mtx_PerspTilt(&p, C3D_AngleFromDegrees(ptransform->fovxangle),
 						C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, true);
+		*/
+		
+		Mtx_PerspStereoTilt(&p, C3D_AngleFromDegrees(ptransform->fovxangle),
+					C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, iod, focalLength, true);
 
 		projection = &p;
 		modelView = &m;
@@ -932,7 +900,10 @@ void NDS3D_SetTransform(FTransform *ptransform)
 	else	/* reset transformation */
 	{
 		/* used in HUD and skybox */
-		projection = &defaultProjection;
+		Mtx_Identity(&p);
+		Mtx_PerspStereoTilt(&p, C3D_AngleFromDegrees(fov),
+					C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, -iod, 1.0f, true);
+		projection = &p;
 		modelView = &defaultModelView;
 	}
 	
@@ -954,11 +925,12 @@ void setFading(u32 color)
 }
 
 /* Returns true if we actually have drawn something */
-bool processRenderQueue(void)
+int processRenderQueue(void)
 {
 	queuePacket *packet;
 	bool finishFrame = false;
 	bool drawn = false;
+	int retval = 0;
 	int packetType;
 
 	clearCounter = 0;	// needed by NDS3D_ClearBuffer
@@ -975,6 +947,8 @@ bool processRenderQueue(void)
 			case CMD_TYPE_FINISH:
 			{
 				finishFrame = true;
+				if (drawn)
+					retval = 1;
 				break;
 			}
 
@@ -1051,7 +1025,10 @@ bool processRenderQueue(void)
 
 				/* Make sure to finish what we started */
 				if (drawn)
+				{
 					finishFrame = true;
+					retval = 2;
+				}
 
 				break;
 			}
@@ -1075,7 +1052,7 @@ bool processRenderQueue(void)
 			//printf("next\n");
 	}
 
-	return drawn;
+	return retval;
 }
 
 void NDS3D_Thread(void)
@@ -1086,33 +1063,54 @@ void NDS3D_Thread(void)
 
 	LightEvent_Signal(&workerInitialized);
 
+	int status;
+
 	for(;;)
 	{
 
 		ensureFrameBegin();
+
+		/* We are now in a frame ... */
+		bool createdCp = false;
+		bool enable3d = get3DSettings(&iod, &focalLength);
 
 next:
 		/* Wait for incoming packets */
 		if (!queuePollForDequeue())
 			queueWaitForEvent(QUEUE_EVENT_NOT_EMPTY, U64_MAX);
 
-		/*
-		do {
-			//printf("cmd wait\n");
-		} while(!queuePollForDequeue());
-		*/
+		if (!createdCp && enable3d)
+		{
+			queueCreateCheckPoint();
+			createdCp = true;
+		}
 
-		/* We are now in a frame ... */
-
-		if (!processRenderQueue())
+		if ((status = processRenderQueue()) == 0)
 		{
 			/* We haven't drawn anything */
 			goto next;
 		}
 
-		//printf("eof\n");
+		/* If 3D is enabled, process queue again for the second target */
+		if (createdCp)
+		{
+			queueRestoreCheckPoint();
+			C3D_FrameDrawOn(targetRight);
+			C3D_RenderTargetClear(targetRight, C3D_CLEAR_ALL, 0, 0);
+			iod = -iod;
+
+next2:
+			if ((status = processRenderQueue()) == 0)
+			{
+				/* We haven't drawn anything */
+				goto next2;
+			}
+		}
 
 		NDS3D_FinishUpdate();
+
+		if (status == 1)
+			queueNotifyFrameProgress();
 	}
 	
 }

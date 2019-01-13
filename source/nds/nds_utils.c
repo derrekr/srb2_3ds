@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <malloc.h>
 #include <3ds.h>
 
 //#define NDS3D_DEBUG_PRINT
@@ -122,10 +123,17 @@ void NDS3D_driverPanic(const char *s, ...)
 	exit(-1);
 }
 
+size_t heapGetFreeSpace()
+{
+	struct mallinfo mi = mallinfo();
+
+	return (size_t) mi.fordblks;
+}
+
 void NDS3D_driverHeapStatus()
 {
-	NDS3D_driverLog("HEAP STATUS:\nLINEAR: 0x%x,\nVRAM: 0x%x,\nREGULAR: 0x%x\n\n",
-				linearSpaceFree(), vramSpaceFree(), mappableSpaceFree());
+	NDS3D_driverLog("HEAP STATUS:\nLINEAR: 0x%x,\nVRAM: 0x%x,\nLIBC: 0x%x\n\n",
+				linearSpaceFree(), vramSpaceFree(), heapGetFreeSpace());
 }
 
 int stricmp(const char *str1, const char *str2)

@@ -1177,12 +1177,15 @@ static menuitem_t OP_VideoModeMenu[] =
 };
 
 #ifdef HWRENDER
+extern consvar_t cv_3dsfoclen;
 static menuitem_t OP_OpenGLOptionsMenu[] =
 {
 	{IT_STRING|IT_CVAR,         NULL, "Field of view",   &cv_grfov,            10},
 	{IT_STRING|IT_CVAR,         NULL, "Quality",         &cv_scr_depth,        20},
 #if !defined (_NDS)
 	{IT_STRING|IT_CVAR,         NULL, "Texture Filter",  &cv_grfiltermode,     30},
+#else
+	{IT_STRING|IT_CVAR,         NULL, "Stereo.3D Focal Length",  &cv_3dsfoclen,     30},
 #endif
 	{IT_STRING|IT_CVAR,         NULL, "Anisotropic",     &cv_granisotropicmode,40},
 #ifdef _WINDOWS

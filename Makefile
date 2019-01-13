@@ -335,7 +335,7 @@ $(OUTPUT).elf	:	$(OFILES)
 %.cia: %.elf
 #---------------------------------------------------------------------------------
 	@makerom -f cia -target t -exefslogo -o $@ -elf $< -rsf $(TOPDIR)/$(META_DIR)/app.rsf \
-		-banner $(TOPDIR)/$(META_DIR)/banner.bin -icon $(OUTPUT).smdh
+		-banner $(TOPDIR)/$(META_DIR)/banner.bin -icon $(OUTPUT).smdh -logo $(TOPDIR)/$(META_DIR)/logo.bcma.lz
 	@echo built ... $(notdir $@)
 
 #---------------------------------------------------------------------------------

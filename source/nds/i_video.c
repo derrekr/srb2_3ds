@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <3ds.h>
 #include <citro3d.h>
 
@@ -30,6 +31,7 @@
 #include "../doomdef.h"
 #include "../command.h"
 #include "../i_video.h"
+#include "../z_zone.h"
 
 #include "../hardware/hw_drv.h"
 #include "../hardware/hw_main.h"
@@ -39,7 +41,7 @@
 #include "r_texcache.h"
 #include "nds_utils.h"
 
-#define GPU_CMDBUF_SIZE		(1024 * 1024 * 4)
+#define GPU_CMDBUF_SIZE		(1024 * 1024 * 9)
 
 #define PALETTE_SIZE		256
 #define PALETTE_CACHE_SIZE	2
@@ -54,6 +56,12 @@ boolean allow_fullscreen = false;
 consvar_t cv_vidwait = {"vid_wait", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 extern consvar_t cv_ticrate;
 
+CV_PossibleValue_t CV_3dsfoclen[] = {{50, "1"}, {60, "2"}, {70, "3"}, {80, "4"},
+	{90, "5"}, {100, "6"}, {110, "7"}, {120, "8"}, {130, "9"}, {140, "10"}, {150, "11"},
+	{160, "12"}, {170, "13"}, {180, "14"}, {190, "15"}, {200, "16"},{0, NULL}};
+consvar_t cv_3dsfoclen = {"gr_3dsfoclen", "5", CV_SAVE, CV_3dsfoclen,
+                             NULL, 0, NULL, NULL, 0, 0, NULL};
+
 // -------------------------------------------------------
 
 LightEvent workerInitialized;
@@ -67,10 +75,12 @@ static u32 fogColor;
 static u32 fogDensity;
 static bool fogEnabled;
 
+static bool hasDrawn;
+
 
 static bool queueWaitEmptyTimeout()
 {
-	const u64 nanoseconds = 1000LL * 1000LL * 50LL;	// 50 ms
+	const u64 nanoseconds = 1000LL * 1000LL * 100LL;	// 100 ms
 
 	return queueWaitForEvent(QUEUE_EVENT_EMPTY, nanoseconds);
 }
@@ -110,7 +120,7 @@ static void stallAndFlushTextures()
 
 	queueWaitEmptyTimeout();
 
-	texCacheFlush(2, &texCurrent);
+	texCacheFlush(5, &texCurrent);
 }
 
 static void SetNoTexture()
@@ -175,6 +185,8 @@ void NDS3DVIDEO_DrawPolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iN
 	else packet->args.argsDraw.fogDensity = 0;
 
 	queueEnqueuePacket(packet);
+
+	hasDrawn = true;
 }
 
 void NDS3DVIDEO_SetBlend(FBITFIELD PolyFlags)
@@ -305,7 +317,7 @@ bool spawnWorkerThread(void)
 
 	/* Create worker */
 	// NOTE: Would actually work with a bad prio as well...
-	for (s32 prio = 0x30; ; prio++)
+	for (s32 prio = 0x32; ; prio++)
 	{
 		workerThread = threadCreate(workerThreadEntry, NULL, stackSize, prio, cpuID, true);
 		if (workerThread != NULL)
@@ -577,6 +589,7 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	GPU_TEXCOLOR gpuFormat;
 	UINT8 texPixelSize;
 	void *texData;
+	void *texDestBuf;
 	C3D_Tex *tex;
 	int texFlags;
 	
@@ -696,44 +709,74 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	/* Allocate texture entity using citro3d */
 
 	unsigned attempts = 0;
+	bool inNVRAM;
 	bool success;
 
-retry:
-
-	if (useMipMap)
-		success = C3D_TexInitMipmap(tex, width * scale, height * scale, gpuFormat);
-	else
-		success = C3D_TexInit(tex, width * scale, height * scale, gpuFormat);
-
-	if(!success)
+	do
 	{
-		/* Ah crap, we are low on memory... */
-		if (attempts <= 0)
+		if (useMipMap)
+			success = C3D_TexInitMipmap(tex, width * scale, height * scale, gpuFormat);
+		else
+			success = C3D_TexInit(tex, width * scale, height * scale, gpuFormat);
+
+		if (!success)
 		{
-			texCacheFlush(1, &texCurrent);
-		}
-		else if (attempts <= 1)
-		{
-			texCacheFlush(2, &texCurrent);
-		}
-		else if (attempts <= 2)
-		{
-			S_SafeClearSfx();
-		}
-		else if (attempts <= 3)
-		{
-			I_StopSong();
-			I_UnloadSong();
+			/* Ah crap, we are low on memory... */
+			NDS3D_driverLog("Tex alloc attempt %i\n", attempts);
+			
+			if (attempts >= 0)
+			{
+				useMipMap = false;
+			}
+			if (attempts >= 1)
+			{
+				/*
+				size_t totalSize = width * scale * height * scale * texPixelSize;
+				texDestBuf = memalign(0x1000, totalSize);
+				if (texDestBuf)
+				{
+					success = C3D_TexInitVRAM(tex, width * scale, height * scale, gpuFormat);
+					if (!success)
+					{
+						free(texDestBuf);
+						texDestBuf = NULL;
+					}
+					else inNVRAM = true;
+				}
+				*/
+				texCacheFlush(0, &texCurrent);
+			}
+			if (attempts >= 2)
+			{
+				texCacheFlush(1, &texCurrent);
+			}
+			if (attempts >= 3)
+			{
+				texCacheFlush(2, &texCurrent);
+			}
+			if (attempts >= 4)
+			{
+				texCacheFlush(3, &texCurrent);
+			}
+			if (attempts >= 5)
+			{
+				texCacheFlush(4, &texCurrent);
+			}
+			if (attempts >= 6)
+			{
+				NDS3D_driverHeapStatus();
+				NDS3D_driverPanic("Failed init tex struct! (heap exhausted?)\n");
+			}
+
+			attempts++;
 		}
 		else
 		{
-			NDS3D_driverHeapStatus();
-			NDS3D_driverPanic("Failed init tex struct! (heap exhausted?)\n");
+			texDestBuf = tex->data;
+			inNVRAM = false;
 		}
 
-		attempts++;
-		goto retry;
-	}
+	} while(!success);
 	
 	//NDS3D_driverHeapStatus();
 	
@@ -756,7 +799,17 @@ retry:
 		texData = localTexBuf;
 	}
 	
-	convertToGpuTexture(texData, width, height, tex->data, gpuFormat, texPixelSize);
+	convertToGpuTexture(texData, width, height, texDestBuf, gpuFormat, texPixelSize);
+
+	/*
+	if (inNVRAM)
+	{
+		size_t totalSize = width * scale * height * scale * texPixelSize;
+		GSPGPU_FlushDataCache(texDestBuf, totalSize);	// XXX race GPU Thread
+		C3D_SyncTextureCopy(texDestBuf, 0, tex->data, 0, totalSize, 8);
+		free(texDestBuf);
+	}
+	*/
 
 	if (useMipMap)
 		C3D_TexGenerateMipmap(tex, GPU_TEXFACE_2D);
@@ -868,6 +921,7 @@ void I_StartupGraphics(void)
 
 	CV_RegisterVar(&cv_vidwait);
 
+	gfxSet3D(true); // Enable stereoscopic 3D
 	C3D_Init(GPU_CMDBUF_SIZE);
 
 	HWD.pfnInit(I_Error);
@@ -877,7 +931,10 @@ void I_StartupGraphics(void)
 	HWR_Startup();
 }
 
-void I_ShutdownGraphics(void){}
+void I_ShutdownGraphics(void)
+{
+	HWD.pfnShutdown();
+}
 
 void I_SetPalette(RGBA_t *palette)
 {
@@ -914,10 +971,15 @@ void I_UpdateNoBlit(void){}
 
 void I_FinishUpdate(void)
 {
-	static unsigned int frameCounter;
+	static u32 frameCounter;
 
 	if (cv_ticrate.value)
         SCR_DisplayTicRate();
+
+    /* At least one polygon must be drawn */
+    if (!hasDrawn)
+    	return;
+    hasDrawn = false;
 
     /*
     extern size_t queueGetAllocCount();
@@ -941,13 +1003,25 @@ void I_FinishUpdate(void)
 	HWR_SwapVertexBuffer();
 
 	/* Update texture age after every second passed */
-	if (frameCounter == TICRATE)
+	if ((frameCounter % TICRATE) == 0)
 	{
 		texCacheFlush(0, &texCurrent);
-		frameCounter = 0;
 	}
-	else frameCounter++;
+	frameCounter++;
 
+	/* Make sure were are not too many frames ahead */
+	u32 numDone = queueGetFrameProgress();
+	u32 diff = frameCounter - numDone;
+
+	if (diff > 1)
+	{
+		while (diff > 1)
+		{
+			queueWaitForFrameProgress();
+			diff = frameCounter - queueGetFrameProgress();
+		}
+	}
+	
 
 #ifdef N3DS_PERF_MEASURE
 
