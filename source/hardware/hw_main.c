@@ -128,7 +128,7 @@ static consvar_t cv_grbeta = {"gr_beta", "0", 0, CV_Unsigned, NULL, 0, NULL, NUL
 static float HWRWipeCounter = 1.0f;
 consvar_t cv_grrounddown = {"gr_rounddown", "Off", 0, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_grfov = {"gr_fov", "90", CV_FLOAT|CV_CALL, grfov_cons_t, CV_grFov_OnChange, 0, NULL, NULL, 0, 0, NULL};
-consvar_t cv_grfogdensity = {"gr_fogdensity", "100", CV_SAVE|CV_CALL|CV_NOINIT, CV_Unsigned,
+consvar_t cv_grfogdensity = {"gr_fogdensity", "80", CV_SAVE|CV_CALL|CV_NOINIT, CV_Unsigned,
                              CV_FogDensity_ONChange, 0, NULL, NULL, 0, 0, NULL};
 
 // Unfortunately, this can no longer be saved..

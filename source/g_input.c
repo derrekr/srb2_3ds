@@ -1166,8 +1166,8 @@ void G_Controldefault(void)
 	gamecontrol[gc_turnright  ][0] = KEY_RIGHTARROW;
 	gamecontrol[gc_pause      ][0] = KEY_JOY1+6; //Start
 	gamecontrol[gc_weaponnext ][0] = KEY_JOY1+7; //Select
-	gamecontrol[gc_turnright  ][1] = KEY_JOY1+10;	/* C-PAD */
-	gamecontrol[gc_turnleft   ][1] = KEY_JOY1+11;
+	gamecontrol[gc_lookup     ][0] = KEY_JOY1+12;	/* C-PAD */
+	gamecontrol[gc_lookdown   ][0] = KEY_JOY1+13;
 }
 #else
 void G_Controldefault(void)
