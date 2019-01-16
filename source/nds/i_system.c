@@ -24,7 +24,7 @@ static INT64 start_time; // as microseconds since the epoch
 #define CPAD_MAX_DELTA	160
 
 u32 __stacksize__ = 0x180000;
-u32 __ctru_linear_heap_size = 46 * 1024 * 1024;
+u32 __ctru_linear_heap_size = 48 * 1024 * 1024;
 
 float sliderState = 0.0f;
 

@@ -399,9 +399,16 @@ u32 queueGetFrameProgress()
 	return retval;
 }
 
-void queueWaitForFrameProgress()
+void queueWaitForFrameProgress(u32 expected)
 {
 	queueLock();
+
+	if (expected <= framesDone)
+	{
+		queueUnlock();
+		return;
+	}
+
 	waitingFameDone = true;
 	queueUnlock();
 

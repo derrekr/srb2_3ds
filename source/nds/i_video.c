@@ -120,6 +120,8 @@ static void stallAndFlushTextures()
 
 	queueWaitEmptyTimeout();
 
+	hasDrawn = false;
+
 	texCacheFlush(5, &texCurrent);
 }
 
@@ -978,8 +980,12 @@ void I_FinishUpdate(void)
 
     /* At least one polygon must be drawn */
     if (!hasDrawn)
+    {
+    	//printf("dummy\n");
     	return;
+    }
     hasDrawn = false;
+
 
     /*
     extern size_t queueGetAllocCount();
@@ -1013,11 +1019,13 @@ void I_FinishUpdate(void)
 	u32 numDone = queueGetFrameProgress();
 	u32 diff = frameCounter - numDone;
 
+
 	if (diff > 1)
 	{
 		while (diff > 1)
 		{
-			queueWaitForFrameProgress();
+			//printf("throttle...%i\n", diff);
+			queueWaitForFrameProgress(numDone);
 			diff = frameCounter - queueGetFrameProgress();
 		}
 	}

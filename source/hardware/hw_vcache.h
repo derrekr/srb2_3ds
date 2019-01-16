@@ -1,6 +1,6 @@
 
 #define MAX_NUM_VECTORS			(64 * 1024)
-#define VCACHE_NUM_BUFFERS		4
+#define VCACHE_NUM_BUFFERS		3
 
 extern FOutVector *	geometryBuf;
 extern size_t		geometryBufIndex;

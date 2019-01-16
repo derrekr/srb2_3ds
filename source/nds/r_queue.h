@@ -108,5 +108,5 @@ void queueCreateCheckPoint();
 void queueRestoreCheckPoint();
 float queueGetUsage();
 u32 queueGetFrameProgress();
-void queueWaitForFrameProgress();
+void queueWaitForFrameProgress(u32 expected);
 void queueNotifyFrameProgress();
