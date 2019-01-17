@@ -388,7 +388,7 @@ void NDS3DVIDEO_Shutdown(void)
 
 	queueWaitEmptyTimeout();
 
-	threadJoin(workerThread, U64_MAX);
+	threadJoin(workerThread, 500LL*1000LL*1000LL);
 
 	printf("OK, bye!\n");
 
