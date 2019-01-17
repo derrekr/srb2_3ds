@@ -301,9 +301,9 @@ release: clean
 	@$(MAKE) -j4 --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 	@echo $(VERS_STRING)
 	@7z a -mx -m0=ARM -m1=LZMA $(TARGET)$(VERS_STRING).7z \
-		$(TARGET).3dsx $(TARGET).smdh $(META_DIR)/config.cfg README.md
+		$(TARGET).3dsx $(TARGET).cia README.md
 	@7z a -mx $(TARGET)$(VERS_STRING).zip \
-		$(TARGET).3dsx $(TARGET).smdh $(META_DIR)/config.cfg README.md
+		$(TARGET).3dsx $(TARGET).cia README.md
 
 #---------------------------------------------------------------------------------
 else
