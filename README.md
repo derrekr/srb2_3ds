@@ -12,6 +12,7 @@ A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
 
 ## Building
 * Building requires 3ds-sdl and 3ds-sdl_mixer to be installed (use devkitPro's pacman).
+* makerom is required for building cia.
 
 ## Known Issues/Limitations
 * Does *NOT* run on o3DS devices. The Nintendo New3DS' HW allows higher CPU clock frequencies and adds another layer of cache.
