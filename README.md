@@ -26,3 +26,5 @@ A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
 Thanks to fincs, WinterMute, Monster Iestyn, Sryder, AlamTaz, Steel Titanium for help with development.
 Thanks to profi200, fincs and WinterMute for testing.
 Credit for 3DS homebrew logo goes to [PabloMK7](http://gbatemp.net/members/pablomk7.345712/).
+
+:)
