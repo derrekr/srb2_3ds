@@ -253,7 +253,7 @@ union FColorRGBA
 		UINT8 blue;
 		UINT8 alpha;
 	} s;
-} ATTRPACK;
+};
 typedef union FColorRGBA RGBA_t;
 
 typedef enum

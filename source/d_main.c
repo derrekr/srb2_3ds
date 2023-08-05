@@ -149,6 +149,8 @@ char srb2path[256] = ".";
 boolean usehome = true;
 const char *pandf = "%s" PATHSEP "%s";
 
+char savegamename[256];
+
 //
 // EVENT HANDLING
 //
