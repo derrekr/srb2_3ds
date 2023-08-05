@@ -6201,7 +6201,9 @@ void HWR_AddCommands(void)
 	CV_RegisterVar(&cv_grfogdensity);
 #if defined(_NDS)
     extern consvar_t cv_3dsfoclen;
+	extern consvar_t cv_3dswidemode;
     CV_RegisterVar(&cv_3dsfoclen);
+	CV_RegisterVar(&cv_3dswidemode);
 #endif
 	CV_RegisterVar(&cv_grfiltermode);
 	CV_RegisterVar(&cv_granisotropicmode);

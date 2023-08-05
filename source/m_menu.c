@@ -1178,6 +1178,7 @@ static menuitem_t OP_VideoModeMenu[] =
 
 #ifdef HWRENDER
 extern consvar_t cv_3dsfoclen;
+extern consvar_t cv_3dswidemode;
 static menuitem_t OP_OpenGLOptionsMenu[] =
 {
 	{IT_STRING|IT_CVAR,         NULL, "Field of view",   &cv_grfov,            10},
@@ -1186,16 +1187,17 @@ static menuitem_t OP_OpenGLOptionsMenu[] =
 	{IT_STRING|IT_CVAR,         NULL, "Texture Filter",  &cv_grfiltermode,     30},
 #else
 	{IT_STRING|IT_CVAR,         NULL, "Stereo.3D Focal Length",  &cv_3dsfoclen,     30},
+	{IT_STRING|IT_CVAR,         NULL, "Wide Screen Mode (240x800 px)",  &cv_3dswidemode,     40},
 #endif
-	{IT_STRING|IT_CVAR,         NULL, "Anisotropic",     &cv_granisotropicmode,40},
+	{IT_STRING|IT_CVAR,         NULL, "Anisotropic",     &cv_granisotropicmode,50},
 #ifdef _WINDOWS
-	{IT_STRING|IT_CVAR,         NULL, "Fullscreen",      &cv_fullscreen,       50},
+	{IT_STRING|IT_CVAR,         NULL, "Fullscreen",      &cv_fullscreen,       60},
 #endif
 #ifdef ALAM_LIGHTING
-	{IT_SUBMENU|IT_STRING,      NULL, "Lighting...",     &OP_OpenGLLightingDef,     70},
+	{IT_SUBMENU|IT_STRING,      NULL, "Lighting...",     &OP_OpenGLLightingDef,     80},
 #endif
-	{IT_SUBMENU|IT_STRING,      NULL, "Fog...",          &OP_OpenGLFogDef,          80},
-	{IT_SUBMENU|IT_STRING,      NULL, "Gamma...",        &OP_OpenGLColorDef,        90},
+	{IT_SUBMENU|IT_STRING,      NULL, "Fog...",          &OP_OpenGLFogDef,          90},
+	{IT_SUBMENU|IT_STRING,      NULL, "Gamma...",        &OP_OpenGLColorDef,        100},
 };
 
 #ifdef ALAM_LIGHTING

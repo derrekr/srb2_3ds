@@ -63,6 +63,7 @@ const float fov = 62.0f;
 // Render targets
 static	C3D_RenderTarget *	targetLeft;
 static	C3D_RenderTarget *	targetRight;
+static	C3D_RenderTarget *	targetWide;
 static	bool				drawing;
 
 // Buffer and Attribute info
@@ -82,7 +83,7 @@ static	int uLoc_projection, uLoc_modelView;
 // Matrices
 static C3D_Mtx defaultModelView;
 // Special Sate
-static	C3D_FogLut	*fogLUTs[MAX_FOG_DENSITY+1];
+static	C3D_FogLut	*fogLUTs[(MAX_FOG_DENSITY+1)/2];
 static	u32			prevFogDensity = -1;
 static	u32			prevFogColor = -1;
 static	bool		fogEnabled;
@@ -94,6 +95,8 @@ static  u32 fadeColor;
 
 static float iod;
 static float focalLength;
+
+static bool wideModeEnabled;
 
 static n3dsRenderStats renderStats;
 
@@ -115,6 +118,48 @@ static bool get3DSettings(float *_iod, float *_foclen)
 		return false;	// 3d not enabled
 
 	return true;
+}
+
+static void setScreenMode(bool enable_3d)
+{
+	extern consvar_t cv_3dswidemode;
+	bool wideModePrev = wideModeEnabled;
+
+	if (enable_3d)
+	{
+		gfxSetWide(false);
+		gfxSet3D(true);
+		wideModeEnabled = false;
+	}
+	else
+	{
+		gfxSet3D(false);
+		if (cv_3dswidemode.value)
+		{
+			wideModeEnabled = true;
+		}
+		else wideModeEnabled = false;
+	}
+
+	/* allow smooth transition between modes */
+	if (wideModePrev == wideModeEnabled)
+	{
+		if (wideModeEnabled)
+		{
+			gfxSetWide(true);
+			C3D_RenderTargetSetOutput(targetWide,  GFX_TOP, 0,  DISPLAY_TRANSFER_FLAGS);
+		}
+		else
+		{
+			gfxSet3D(enable_3d);
+			C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
+			C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
+		}
+	}
+	else
+	{
+		gfxSetWide(wideModePrev);
+	}
 }
 
 void *I_InitVertexBuffer(const size_t geoBufSize)
@@ -281,6 +326,8 @@ boolean NDS3D_Init()
 	C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, 0, 0);
 	C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
 	C3D_RenderTargetClear(targetRight, C3D_CLEAR_ALL, 0, 0);
+
+	targetWide  = C3D_RenderTargetCreate(240, 800, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	
 	InitTextureUnits();
 
@@ -358,8 +405,8 @@ static bool ensureFrameBegin()
 
 	C3D_FrameBegin(0);
 
-	C3D_FrameDrawOn(targetLeft);
-	C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, 0, 0);
+	C3D_FrameDrawOn(wideModeEnabled ? targetWide : targetLeft);
+	C3D_RenderTargetClear(wideModeEnabled ? targetWide : targetLeft, C3D_CLEAR_ALL, 0, 0);
 	drawing = true;
 
 	renderStats.msWaiting = osGetTime() - time;
@@ -422,20 +469,21 @@ static void setFog(u32 fogColor, u32 fogDensity)
 
 	if(prevFogDensity != fogDensity)
 	{
-		if(fogDensity > MAX_FOG_DENSITY)
+		if (fogDensity > MAX_FOG_DENSITY)
 		{
 			//printf("fogDensity %i is too high!", fogDensity);
 			fogDensity = MAX_FOG_DENSITY;
 		}
 
-		C3D_FogLut *lut = fogLUTs[fogDensity];
+		size_t lutIndex = fogDensity >> 1;
+		C3D_FogLut *lut = fogLUTs[lutIndex];
 
 		if (!lut)
 		{
 			lut = malloc(sizeof(C3D_FogLut));
 			float d =  fogDensity*100/(1250*10000.0f*14.0f); 
 			FogLut_Exp(lut, d, 0.75f, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);	/* arbitrary */
-			fogLUTs[fogDensity] = lut;
+			fogLUTs[lutIndex] = lut;
 		}
 
 		C3D_FogLutBind(lut);
@@ -1073,6 +1121,8 @@ void NDS3D_Thread(void)
 		/* We are now in a frame ... */
 		bool createdCp = false;
 		bool enable3d = get3DSettings(&iod, &focalLength);
+
+		setScreenMode(enable3d);
 
 next:
 		/* Wait for incoming packets */
