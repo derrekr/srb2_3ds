@@ -20,8 +20,9 @@ typedef struct {
 	size_t offr;
 } RingBuffer;
 
-const size_t ringBufferSize = 8 * 1024 * sizeof(queuePacket);
+#define RINGBUF_SIZE	(8 * 1024)
 
+static queuePacket packets[RINGBUF_SIZE];
 static RingBuffer ringBuffer;
 static LightLock lock;
 static Handle eventNotEmpty;
@@ -38,10 +39,10 @@ static bool waitingFameDone;
 
 static bool initRingBuffer()
 {
-	ringBuffer.mem = (queuePacket *) malloc(ringBufferSize);
+	ringBuffer.mem = packets;
 	ringBuffer.offw = 0;
 	ringBuffer.offr = 0;
-	ringBuffer.num = ringBufferSize / sizeof(queuePacket);
+	ringBuffer.num = RINGBUF_SIZE;
 
 	__dmb();
 
@@ -439,7 +440,7 @@ void queueDump()
 
 	N3DS_Print("queue w %x, r %x\n", offw, offr);
 	N3DS_Print("data [w] %x, [r] %x\n", ringBuffer.mem[offw], ringBuffer.mem[offr]);
-	NDS3D_driverMemDump(ringBuffer.mem, ringBufferSize);
+	NDS3D_driverMemDump(ringBuffer.mem, RINGBUF_SIZE);
 
 	queueUnlock();
 
