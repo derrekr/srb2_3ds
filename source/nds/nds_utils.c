@@ -100,6 +100,20 @@ void NDS3D_driverMemDump(void*buf, size_t size)
 	findex++;
 }
 
+void Debug_break()
+{
+	printf("\n\nDEBUG BREAK\nPress START to continue.\n");
+
+	while (aptMainLoop())
+	{
+		hidScanInput();
+		u32 down = keysDown();
+
+		if (down & KEY_START)
+			break;
+	}
+}
+
 __attribute__((noreturn))
 void NDS3D_driverPanic(const char *s, ...)
 {
@@ -118,22 +132,8 @@ void NDS3D_driverPanic(const char *s, ...)
 	printf("\n\n********* PANIC *********\n");
 	printf("%s\n", tmp);
 	
-	printf("Shutting down in 10 seconds...\n");
-	svcSleepThread(1000LL * 1000LL * 1000LL * 10);
+	Debug_break();
 	exit(-1);
-}
-
-size_t heapGetFreeSpace()
-{
-	struct mallinfo mi = mallinfo();
-
-	return (size_t) mi.fordblks;
-}
-
-void NDS3D_driverHeapStatus()
-{
-	NDS3D_driverLog("HEAP STATUS:\nLINEAR: 0x%x,\nVRAM: 0x%x,\nLIBC: 0x%x\n\n",
-				linearSpaceFree(), vramSpaceFree(), heapGetFreeSpace());
 }
 
 int stricmp(const char *str1, const char *str2)
@@ -167,4 +167,15 @@ int strnicmp(const char *str1, const char *str2, size_t len)
 	}
 	
 	return 0;
+}
+
+size_t heapGetFreeSpace()
+{
+	return (size_t) 0; // unknown
+}
+
+void NDS3D_driverHeapStatus()
+{
+	NDS3D_driverLog("HEAP STATUS:\nLINEAR: 0x%x,\nVRAM: 0x%x,\nLIBC: 0x%x\n\n",
+				linearSpaceFree(), vramSpaceFree(), heapGetFreeSpace());
 }

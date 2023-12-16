@@ -187,7 +187,7 @@ static void HWR_DrawPatchInCache(GLMipmap_t *mipmap,
 //       blockheight
 //note :  8bit (1 byte per pixel) palettized format
 static void HWR_ResizeBlock(INT32 originalwidth, INT32 originalheight,
-	GrTexInfo *grInfo)
+	GrTexInfo *grInfo, int texid)
 {
 	//   Build the full textures from patches.
 	static const GrLOD_t gr_lods[9] =
@@ -229,13 +229,20 @@ static void HWR_ResizeBlock(INT32 originalwidth, INT32 originalheight,
 	// find a power of 2 width/height
 	if (cv_grrounddown.value)
 	{
-		blockwidth = 256;
+		bool is_skybox = false;
+		extern INT32 skytexture;
+		if (texid == skytexture) {
+			printf("Detected skybox!\n");
+			is_skybox = true;
+		}
+
+		blockwidth = is_skybox ? 128 : 32;
 		while (originalwidth < blockwidth)
 			blockwidth >>= 1;
 		if (blockwidth < 1)
 			I_Error("3D GenerateTexture : too small");
 
-		blockheight = 256;
+		blockheight = is_skybox ? 128 : 32;
 		while (originalheight < blockheight)
 			blockheight >>= 1;
 		if (blockheight < 1)
@@ -411,7 +418,7 @@ static void HWR_GenerateTexture(INT32 texnum, GLTexture_t *grtex)
 	else
 		grtex->mipmap.flags = TF_CHROMAKEYED | TF_WRAPXY;
 
-	HWR_ResizeBlock (texture->width, texture->height, &grtex->mipmap.grInfo);
+	HWR_ResizeBlock (texture->width, texture->height, &grtex->mipmap.grInfo, texnum);
 	grtex->mipmap.width = (UINT16)blockwidth;
 	grtex->mipmap.height = (UINT16)blockheight;
 	grtex->mipmap.grInfo.format = textureformat;
@@ -483,7 +490,7 @@ void HWR_MakePatch (const patch_t *patch, GLPatch_t *grPatch, GLMipmap_t *grMipm
 		grPatch->topoffset = SHORT(patch->topoffset);
 
 		// find the good 3dfx size (boring spec)
-		HWR_ResizeBlock (SHORT(patch->width), SHORT(patch->height), &grMipmap->grInfo);
+		HWR_ResizeBlock (SHORT(patch->width), SHORT(patch->height), &grMipmap->grInfo, -1);
 		grMipmap->width = (UINT16)blockwidth;
 		grMipmap->height = (UINT16)blockheight;
 
@@ -923,7 +930,7 @@ GLPatch_t *HWR_GetPic(lumpnum_t lumpnum)
 		grpatch->topoffset = 0;
 
 		// find the good 3dfx size (boring spec)
-		HWR_ResizeBlock (grpatch->width, grpatch->height, &grpatch->mipmap.grInfo);
+		HWR_ResizeBlock (grpatch->width, grpatch->height, &grpatch->mipmap.grInfo, -1);
 		grpatch->mipmap.width = (UINT16)blockwidth;
 		grpatch->mipmap.height = (UINT16)blockheight;
 
@@ -983,6 +990,7 @@ GLPatch_t *HWR_GetPic(lumpnum_t lumpnum)
 		grpatch->max_s = (float)newwidth  / (float)blockwidth;
 		grpatch->max_t = (float)newheight / (float)blockheight;
 	}
+	
 	HWD.pfnSetTexture(&grpatch->mipmap);
 	//CONS_Debug(DBG_RENDER, "picloaded at %x as texture %d\n",grpatch->mipmap.grInfo.data, grpatch->mipmap.downloaded);
 
@@ -1085,7 +1093,7 @@ static void HWR_CacheFadeMask(GLMipmap_t *grMipmap, lumpnum_t fademasklumpnum)
 	}
 
 	// Thankfully, this will still work for this scenario
-	HWR_ResizeBlock(fmwidth, fmheight, &grMipmap->grInfo);
+	HWR_ResizeBlock(fmwidth, fmheight, &grMipmap->grInfo, -1);
 
 	grMipmap->width  = blockwidth;
 	grMipmap->height = blockheight;

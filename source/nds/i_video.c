@@ -41,7 +41,8 @@
 #include "r_texcache.h"
 #include "nds_utils.h"
 
-#define GPU_CMDBUF_SIZE		(1024 * 1024 * 9)
+#define GPU_CMDBUF_SIZE		(1024 * 1024 * 8)
+#define GPU_GXQUEUE_SIZE	(1024 * 4)
 
 #define PALETTE_SIZE		256
 #define PALETTE_CACHE_SIZE	2
@@ -55,6 +56,8 @@ boolean highcolor = false;
 boolean allow_fullscreen = false;
 consvar_t cv_vidwait = {"vid_wait", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 extern consvar_t cv_ticrate;
+
+consvar_t cv_3dswidemode = {"gr_3dswidemode", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 CV_PossibleValue_t CV_3dsfoclen[] = {{50, "1"}, {60, "2"}, {70, "3"}, {80, "4"},
 	{90, "5"}, {100, "6"}, {110, "7"}, {120, "8"}, {130, "9"}, {140, "10"}, {150, "11"},
@@ -71,9 +74,9 @@ static u32 myPaletteData[256];
 static TextureInfo *texCurrent;
 
 // fog state
+static bool fogEnabled;
 static u32 fogColor;
 static u32 fogDensity;
-static bool fogEnabled;
 
 static bool hasDrawn;
 
@@ -308,12 +311,37 @@ void workerThreadEntry(void *arg)
 bool spawnWorkerThread(void)
 {
 	const size_t stackSize = 64 * 1024;
-	const int cpuID = 2;
+	int cpuID;
 	const s32 bestPrio = 0x18;
 	s32 actualPrio = 0;
 
+	cpuID = isNew3DS ? 2 : 1;
+
 	s32 curCPU = svcGetProcessorID();
 	printf("main thread cpuID: %i\n", curCPU);
+
+	if (!isNew3DS)
+	{
+		u32 percent;
+
+		printf("Running on original 3DS\n");
+
+		if(APT_GetAppCpuTimeLimit(&percent))
+			printf("APT_GetAppCpuTimeLimit failed\n");
+		else printf("percent: %i\n", percent);
+
+		if(APT_SetAppCpuTimeLimit(30))
+			printf("APT_SetAppCpuTimeLimit failed\n");
+
+		if(APT_SetAppCpuTimeLimit(40))
+			printf("APT_SetAppCpuTimeLimit failed\n");
+
+		if(APT_GetAppCpuTimeLimit(&percent))
+			printf("APT_GetAppCpuTimeLimit failed\n");
+		else printf("percent: %i\n", percent);
+	}
+	else printf("Running on New3DS\n");
+	
 
 	LightEvent_Init(&workerInitialized, RESET_ONESHOT);
 
@@ -553,7 +581,7 @@ static void convertToGpuTexture(u32 *bufIn, size_t width, size_t height, u32 *bu
 }
 
 static void generateTexFromPalette(u32 *bufIn, size_t width, size_t height,
-								GrTextureFormat_t format, RGBA_t *bufOut)
+								GrTextureFormat_t format, RGBA_t *bufOut, u8 downFactor)
 {
 	u8 *imgData = (u8 *) bufIn;
 
@@ -561,7 +589,8 @@ static void generateTexFromPalette(u32 *bufIn, size_t width, size_t height,
 	{
 		for(size_t i=0; i<width*height; i++)
 		{
-			bufOut->rgba = myPaletteData[*imgData++];
+			bufOut->rgba = myPaletteData[*imgData];
+			imgData += downFactor;
 			bufOut++;
 		}
 	}
@@ -574,8 +603,9 @@ static void generateTexFromPalette(u32 *bufIn, size_t width, size_t height,
 #endif
 		for(size_t i=0; i<width*height; i++)
 		{
-			bufOut->rgba = myPaletteData[*imgData++];
-			bufOut->s.alpha = *imgData++;
+			bufOut->rgba = myPaletteData[*imgData];
+			bufOut->s.alpha = imgData[1];
+			imgData += downFactor*2;
 			bufOut++;
 		}
 	}
@@ -587,6 +617,7 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	UINT16 height;
 	UINT16 width;
 	UINT8 scale;
+	UINT8 downsampleFactor = 1;
 	GrTextureFormat_t texFormat;
 	GPU_TEXCOLOR gpuFormat;
 	UINT8 texPixelSize;
@@ -645,6 +676,19 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	scale = calcTexScaleFactor(width, height);
 	
 	texFormat = TexInfo->grInfo.format;
+
+	/* Downsample large palette-based textures */
+	if((texFormat == GR_TEXFMT_P_8 || texFormat == GR_TEXFMT_AP_88) &&
+		(width > 32 && height > 32))
+	{
+		size_t max = max(width, height);
+		downsampleFactor = max/32;
+		width = width/downsampleFactor;
+		height = height/downsampleFactor;
+	}
+
+		if (width > 32)
+	printf("Texture dimensions: %i x %i\n", width, height);
 	
 	switch(texFormat)
 	{
@@ -698,13 +742,13 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	extern gamestate_t gamestate;
 	switch (gamestate)
 	{
-		case GS_INTRO:
-		case GS_CUTSCENE:
-		case GS_TITLESCREEN:
-			useMipMap = false;
-			break;
-		default:
+		case GS_LEVEL:
 			useMipMap = true;
+			cv_grrounddown.value = 1;
+		default:
+			useMipMap = false;
+			cv_grrounddown.value = 0;
+			break;
 	}
 
 
@@ -797,7 +841,7 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	
 	if(texFormat == GR_TEXFMT_P_8 || texFormat == GR_TEXFMT_AP_88)
 	{
-		generateTexFromPalette(texData, width, height, texFormat, localTexBuf);
+		generateTexFromPalette(texData, width, height, texFormat, localTexBuf, downsampleFactor);
 		texData = localTexBuf;
 	}
 	
@@ -923,8 +967,11 @@ void I_StartupGraphics(void)
 
 	CV_RegisterVar(&cv_vidwait);
 
-	gfxSet3D(true); // Enable stereoscopic 3D
-	C3D_Init(GPU_CMDBUF_SIZE);
+	bool ok = C3D_InitEx(GPU_CMDBUF_SIZE, GPU_GXQUEUE_SIZE, true);
+	if (!ok) {
+		N3DS_Panic("Failed to Init Citro3D!\n");
+	}
+	//C3D_Init(GPU_CMDBUF_SIZE);
 
 	HWD.pfnInit(I_Error);
 
@@ -1003,6 +1050,9 @@ void I_FinishUpdate(void)
 				queueGetUsage()*100.0f,
 				texCacheGetNumCached());
 	*/
+
+    //size_t freemem = heapGetFreeSpace();
+	//printf("%i     KiB (%i     MiB)\r", freemem/1024, freemem/(1024*1024));
 
 	HWD.pfnFinishUpdate(true);
 

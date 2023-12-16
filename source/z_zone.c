@@ -215,6 +215,7 @@ static void *xm(size_t size)
 	if (p == NULL)
 	{
 		// Oh crumbs: we're out of heap. Try purging the cache and reallocating.
+		printf("xm purge!\n");
 		Z_FreeTags(PU_PURGELEVEL, INT32_MAX);
 		p = malloc(padedsize);
 

@@ -19,6 +19,8 @@
 UINT8 graphics_started = 0;
 UINT8 keyboard_started = 0;
 
+bool isNew3DS = false;
+
 static INT64 start_time; // as microseconds since the epoch
 
 #define CPAD_MAX_DELTA	160
@@ -366,6 +368,7 @@ INT32 I_StartupSystem(void)
 
 	if (PTMSYSM_CheckNew3DS())
 	{
+		isNew3DS = true;
 		osSetSpeedupEnable(true);
 		// enable fast clock + L2 cache on new3ds
 		PTMSYSM_ConfigureNew3DSCPU(3);

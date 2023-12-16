@@ -403,7 +403,10 @@ static bool ensureFrameBegin()
 
 	u64 time = osGetTime();
 
-	C3D_FrameBegin(0);
+	bool ok = C3D_FrameBegin(C3D_FRAME_NONBLOCK);
+	if (!ok) { // XXX testing
+		N3DS_Panic("C3D_FrameBegin returned false!");
+	}
 
 	C3D_FrameDrawOn(wideModeEnabled ? targetWide : targetLeft);
 	C3D_RenderTargetClear(wideModeEnabled ? targetWide : targetLeft, C3D_CLEAR_ALL, 0, 0);
