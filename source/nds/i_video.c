@@ -678,18 +678,22 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 	texFormat = TexInfo->grInfo.format;
 
 	/* Downsample large palette-based textures */
-	if((texFormat == GR_TEXFMT_P_8 || texFormat == GR_TEXFMT_AP_88) &&
-		(width > 32 && height > 32))
-	{
-		size_t max = max(width, height);
-		downsampleFactor = max/32;
-		width = width/downsampleFactor;
-		height = height/downsampleFactor;
+	if (!isNew3DS) {
+		if((texFormat == GR_TEXFMT_P_8 || texFormat == GR_TEXFMT_AP_88) &&
+			(width > 32 && height > 32))
+		{
+			size_t max = max(width, height);
+			downsampleFactor = max/32;
+			width = width/downsampleFactor;
+			height = height/downsampleFactor;
+		}
 	}
-
-		if (width > 32)
-	printf("Texture dimensions: %i x %i\n", width, height);
 	
+	/*
+	if (width > 32)
+		printf("Texture dimensions: %i x %i\n", width, height);
+	*/
+
 	switch(texFormat)
 	{
 		case GR_TEXFMT_ALPHA_8:
@@ -737,8 +741,9 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 
 	/* Figure out if we want to use mipmaps */
 
-	bool useMipMap;
-
+	bool useMipMap = true;
+/*
+	TODO: This causes mimapping to be disabled during a level
 	extern gamestate_t gamestate;
 	switch (gamestate)
 	{
@@ -750,7 +755,7 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 			cv_grrounddown.value = 0;
 			break;
 	}
-
+*/
 
 	/* Allocate texture entity using citro3d */
 
