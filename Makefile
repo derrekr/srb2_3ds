@@ -60,7 +60,7 @@ ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS	:=	-g -Wall -O3 -mword-relocations \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH)
-DEFINES	:=	-DARM11 -D_3DS  -DNDS_VERS_STRING=\"$(VERS_STRING)\" \
+DEFINES	:=	-D__3DS__  -DNDS_VERS_STRING=\"$(VERS_STRING)\" \
 			-D_NDS -DNONET -DNO_IPV6 -DNOHS -DNOMD5 -DHAVE_BLUA -DHWRENDER -DNOPOSTPROCESSING -DNOSPLITSCREEN -DDIAGNOSTIC
 
 CFLAGS	+=	$(INCLUDE) $(DEFINES)
@@ -68,7 +68,7 @@ CFLAGS	+=	$(INCLUDE) $(DEFINES)
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
 ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -z muldefs
 
 LIBS	:= -lSDL_mixer -lmikmod -lmad -lvorbisidec -logg -lSDL -lcitro3d -lctru -lm
 
