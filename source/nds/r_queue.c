@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdatomic.h>
 #include <3ds.h>
 #include <citro3d.h>
 
@@ -71,26 +72,9 @@ fail:
 	return false;
 }
 
-static bool islocked;
-
-static inline void queueLock()
-{
-	LightLock_Lock(&lock);
-	islocked = true;
-}
-
-static inline void queueUnlock()
-{
-	assert(islocked);
-	islocked = false;
-	LightLock_Unlock(&lock);
-}
-
 // lock must be taken
 static size_t queueGetFreeSpace()
 {
-	assert(islocked);
-
 	size_t diff;
 	size_t offw = ringBuffer.offw;
 	size_t offr = ringBuffer.offr;
@@ -128,8 +112,6 @@ static size_t queueGetFreeSpace()
 // lock must be taken
 bool queueCheckDiff(size_t maxDiff)
 {
-	assert(islocked);
-
 	size_t diff;
 	size_t offw = ringBuffer.offw;
 	size_t offr = ringBuffer.offr;
@@ -150,8 +132,6 @@ bool queueCheckDiff(size_t maxDiff)
 // lock must be taken
 static void queueWakeupSleepers()
 {
-	assert(islocked);
-
 	if (want_eventNotEmpty)
 	{
 		if (ringBuffer.offw != ringBuffer.offr)
@@ -194,8 +174,6 @@ bool queueWaitForEvent(int mode, s64 nanoseconds)
 	Result res;
 	Handle *event;
 
-	queueLock();
-
 	switch (mode)
 	{
 		case QUEUE_EVENT_NOT_EMPTY:
@@ -221,7 +199,6 @@ bool queueWaitForEvent(int mode, s64 nanoseconds)
 	/* First, wake up any other sleeping thread */
 	queueWakeupSleepers();
 
-	queueUnlock();
 
 	res = svcWaitSynchronization(*event, nanoseconds);
 
@@ -230,13 +207,10 @@ bool queueWaitForEvent(int mode, s64 nanoseconds)
 
 queuePacket *queueAllocPacket()
 {
-	queueLock();
-
 	size_t curOffsetW = ringBuffer.offw;
 
 	if (queueGetFreeSpace() < 100u)
 	{
-		queueUnlock();
 		return NULL;
 /*
 #ifdef DIAGNOSTIC
@@ -250,15 +224,11 @@ queuePacket *queueAllocPacket()
 */
 	}
 
-	queueUnlock();
-
 	return ringBuffer.mem + curOffsetW;
 }
 
 void queueEnqueuePacket(queuePacket *packet)
 {
-	queueLock();
-
 	size_t curOffset = ringBuffer.offw;
 	size_t packet_ = (size_t) packet;
 
@@ -268,35 +238,26 @@ void queueEnqueuePacket(queuePacket *packet)
 #endif
 	//N3DS_Print("sent packet %i\n", packet->type);
 	
-	ringBuffer.offw = (curOffset + 1) % ringBuffer.num;
+	atomic_store_explicit(&ringBuffer.offw, (curOffset + 1) % ringBuffer.num, memory_order_acq_rel);
 
 	if (want_eventNotEmpty)
 	{
 		want_eventNotEmpty = false;
-		queueUnlock();
 		svcSignalEvent(eventNotEmpty);
 	}
-	else queueUnlock();
 
 	//N3DS_Print("enqueued w %x, r %x\n", ringBuffer.offw, ringBuffer.offr);
 }
 
 bool queuePollForDequeue()
 {
-	queueLock();
-
 	bool result = ringBuffer.offw != ringBuffer.offr;
-
-	queueUnlock();
-
 	return result;
 }
 
 queuePacket *queueDequeuePacket()
 {
 	queuePacket *packet;
-
-	queueLock();
 
 	size_t curOffset = ringBuffer.offr;
 
@@ -306,8 +267,9 @@ queuePacket *queueDequeuePacket()
 #endif
 
 	packet = ringBuffer.mem + curOffset;
-	
-	ringBuffer.offr = (curOffset + 1) % ringBuffer.num;
+
+	atomic_store_explicit(&ringBuffer.offr, (curOffset + 1) % ringBuffer.num, memory_order_release);
+
 
 	//N3DS_Print("dequeued w %x, r %x\n", ringBuffer.offw, ringBuffer.offr);
 
@@ -316,7 +278,6 @@ queuePacket *queueDequeuePacket()
 		if (ringBuffer.offw == ringBuffer.offr && !usesCheckPoint)
 		{
 			want_eventEmpty = false;
-			queueUnlock();
 			svcSignalEvent(eventEmpty);
 			goto done;
 		}
@@ -326,7 +287,6 @@ queuePacket *queueDequeuePacket()
 		if (queueCheckDiff(10))
 		{
 			want_eventAlmostEmpty = false;
-			queueUnlock();
 			svcSignalEvent(eventAlmostEmpty);
 			goto done;
 		}
@@ -336,13 +296,10 @@ queuePacket *queueDequeuePacket()
 		if (queueGetFreeSpace() >= 100u)
 		{
 			want_eventAllocOk = false;
-			queueUnlock();
 			svcSignalEvent(eventAllocOk);
 			goto done;
 		}
 	}
-
-	queueUnlock();
 
 done:
 	
@@ -351,27 +308,21 @@ done:
 
 void queueCreateCheckPoint()
 {
-	queueLock();
 	assert(!usesCheckPoint);
 	checkPoint = ringBuffer.offr;
 	usesCheckPoint = true;
-	queueUnlock();
 }
 
 void queueRestoreCheckPoint()
 {
-	queueLock();
 	assert(usesCheckPoint);
 	ringBuffer.offr = checkPoint;
 	usesCheckPoint = false;
 	checkPoint = 0;
-	queueUnlock();
 }
 
 float queueGetUsage()
 {
-	queueLock();
-
 	size_t diff;
 	size_t offw = ringBuffer.offw;
 	size_t offr = ringBuffer.offr;
@@ -386,40 +337,30 @@ float queueGetUsage()
 		diff = offw - offr;
 	}
 
-	queueUnlock();
-
 	return (float) diff / (float) ringBuffer.num;
 }
 
 u32 queueGetFrameProgress()
 {
-	queueLock();
 	u32 retval = framesDone;
-	queueUnlock();
 
 	return retval;
 }
 
 void queueWaitForFrameProgress(u32 expected)
 {
-	queueLock();
-
 	if (expected <= framesDone)
 	{
-		queueUnlock();
 		return;
 	}
 
 	waitingFameDone = true;
-	queueUnlock();
 
 	LightEvent_Wait(&eventFrameDone);
 }
 
 void queueNotifyFrameProgress()
 {
-	queueLock();
-
 	framesDone++;
 
 	if (waitingFameDone)
@@ -427,13 +368,10 @@ void queueNotifyFrameProgress()
 		LightEvent_Signal(&eventFrameDone);
 		waitingFameDone = false;
 	}
-
-	queueUnlock();
 }
 
 void queueDump()
 {
-	queueLock();
 
 	size_t offw = ringBuffer.offw;
 	size_t offr = ringBuffer.offr;
@@ -441,8 +379,6 @@ void queueDump()
 	N3DS_Print("queue w %x, r %x\n", offw, offr);
 	N3DS_Print("data [w] %x, [r] %x\n", ringBuffer.mem[offw], ringBuffer.mem[offr]);
 	NDS3D_driverMemDump(ringBuffer.mem, RINGBUF_SIZE);
-
-	queueUnlock();
 
 	N3DS_Print("queue dump done.\n");
 }
