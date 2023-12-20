@@ -29,7 +29,6 @@ u32 __stacksize__ = 0x180000;
 u32 __ctru_linear_heap_size = 48 * 1024 * 1024;
 
 float sliderState = 0.0f;
-
 //----------------------------
 
 UINT32 I_GetFreeMem(UINT32 *total)
@@ -65,6 +64,7 @@ static bool isInGame()
 
 void I_GetEvent(void)
 {
+	static touchPosition last_touch_position;
 	// set of keys we care about
 	const u32 dskeys[] =
 	{
@@ -105,6 +105,7 @@ void I_GetEvent(void)
 	up = keysUp();
 	down = keysDown();
 
+
 	sliderState = osGet3DSliderState();
 
 	{
@@ -124,6 +125,27 @@ void I_GetEvent(void)
 		
 		D_PostEvent(&event);
 
+		
+		hidCstickRead(&cpos);
+		event.data1=1;
+		event.data2 = cpos.dx*amplifier;
+		event.data3 = cpos.dy*amplifier;
+		D_PostEvent(&event);
+		
+		
+		/* Touchscreen emulates a trackpad */
+		if(keysHeld() & KEY_TOUCH) {
+			touchPosition current_touch_position;
+			hidTouchRead(&current_touch_position);
+			if (!(keysDown() & KEY_TOUCH)) {
+				event.type = ev_mouse;
+				event.data1 = 0;
+				event.data2 = current_touch_position.px - last_touch_position.px;
+				event.data3 = current_touch_position.py - last_touch_position.py;
+				D_PostEvent(&event);
+			}
+			last_touch_position = current_touch_position;
+		}
 
 		/* For the buttons, we need to report changes in state */
 		for (i = 0; i < sizeof(dskeys)/sizeof(dskeys[0]); i++)
