@@ -388,7 +388,8 @@ INT32 I_StartupSystem(void)
 	extern INT32 myargc;
 	extern char **myargv;
 
-	if (PTMSYSM_CheckNew3DS())
+	APT_CheckNew3DS(&isNew3DS);
+	if (isNew3DS)
 	{
 		isNew3DS = true;
 		osSetSpeedupEnable(true);
