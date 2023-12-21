@@ -12,6 +12,7 @@ A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
 
 ## Building
 * Building requires 3ds-sdl and 3ds-sdl_mixer to be installed (use devkitPro's pacman).
+* Build and install [this fork](https://github.com/derrekr/citro3d) of the citro3d 3DS graphics library.
 * makerom is required for building cia.
 
 ## Known Issues/Limitations
