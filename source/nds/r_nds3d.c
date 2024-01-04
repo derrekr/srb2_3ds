@@ -54,6 +54,8 @@
 #define MAX_FOG_DENSITY			255
 
 extern LightEvent workerInitialized;
+extern LightEvent rendererResume;
+extern bool renderThreadHang;
 
 // XXX arbitrary near and far plane
 FCOORD NEAR_CLIPPING_PLANE = NZCLIP_PLANE;
@@ -403,10 +405,7 @@ static bool ensureFrameBegin()
 
 	u64 time = osGetTime();
 
-	bool ok = C3D_FrameBegin(C3D_FRAME_NONBLOCK);
-	if (!ok) { // XXX testing
-		N3DS_Panic("C3D_FrameBegin returned false!");
-	}
+	C3D_FrameBegin(0);
 
 	C3D_FrameDrawOn(wideModeEnabled ? targetWide : targetLeft);
 	C3D_RenderTargetClear(wideModeEnabled ? targetWide : targetLeft, C3D_CLEAR_ALL, 0, 0);
@@ -898,6 +897,12 @@ static void debugSetTransform(FTransform *ptransform)
 }
 */
 
+void waitForProgress() {
+	while(!queuePollForDequeue()) {
+		queueWaitForEvent(QUEUE_EVENT_NOT_EMPTY, U64_MAX);
+	}
+}
+
 void NDS3D_SetTransform(FTransform *ptransform)
 {
 	C3D_Mtx m, p;
@@ -1099,7 +1104,7 @@ int processRenderQueue(void)
 
 		//printf("next\n");
 
-		while(!queuePollForDequeue());
+		waitForProgress();
 			//printf("next\n");
 	}
 
@@ -1118,6 +1123,9 @@ void NDS3D_Thread(void)
 
 	for(;;)
 	{
+		while (renderThreadHang) {
+			LightEvent_Wait(&rendererResume);
+		}
 
 		ensureFrameBegin();
 
@@ -1129,8 +1137,7 @@ void NDS3D_Thread(void)
 
 next:
 		/* Wait for incoming packets */
-		if (!queuePollForDequeue())
-			queueWaitForEvent(QUEUE_EVENT_NOT_EMPTY, U64_MAX);
+		waitForProgress();
 
 		if (!createdCp && enable3d)
 		{

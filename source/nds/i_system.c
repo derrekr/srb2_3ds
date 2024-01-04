@@ -19,6 +19,10 @@
 UINT8 graphics_started = 0;
 UINT8 keyboard_started = 0;
 
+bool pauseRendering;
+bool renderThreadHang;
+LightEvent rendererResume;
+
 bool isNew3DS = false;
 
 static INT64 start_time; // as microseconds since the epoch
@@ -95,10 +99,33 @@ void I_GetEvent(void)
 	UINT32 up, down;
 	UINT32 i;
 	bool ingame = isInGame();
-	
-	if(!aptMainLoop())
+
+	/* handle apt transitions */
+	static int counter;
+	if (aptShouldJumpToHome() || aptShouldClose())
 	{
-		I_Quit();
+		pauseRendering = true;
+		renderThreadHang = true;
+		counter++;
+		//printf("counter: %i\n", counter);
+	}
+
+	// wait one frame before passing control to the menu applet
+	if (counter >= 2) {
+		counter = 0;
+		if(!aptMainLoop())
+		{
+			I_Quit();
+		}
+	}
+
+	if (pauseRendering && !aptShouldJumpToHome() && !aptShouldClose()) {
+		//printf("resuming renderer...\n");
+		renderThreadHang = false;
+		// wakeup renderer
+		LightEvent_Signal(&rendererResume);
+		pauseRendering = false;
+		printf("resumed\n");
 	}
 
 	hidScanInput();
@@ -397,6 +424,9 @@ INT32 I_StartupSystem(void)
 		PTMSYSM_ConfigureNew3DSCPU(3);
 		osSetSpeedupEnable(true);
 	}
+
+	LightEvent_Init(&rendererResume, RESET_ONESHOT);
+	aptSetSleepAllowed(false);
 
 	// early Initialize graphics
 	gfxInitDefault();

@@ -129,7 +129,6 @@ bool queueCheckDiff(size_t maxDiff)
 	return maxDiff >= diff;
 }
 
-// lock must be taken
 static void queueWakeupSleepers()
 {
 	if (want_eventNotEmpty)
@@ -199,7 +198,6 @@ bool queueWaitForEvent(int mode, s64 nanoseconds)
 	/* First, wake up any other sleeping thread */
 	queueWakeupSleepers();
 
-
 	res = svcWaitSynchronization(*event, nanoseconds);
 
 	return res == 0;
@@ -251,7 +249,9 @@ void queueEnqueuePacket(queuePacket *packet)
 
 bool queuePollForDequeue()
 {
-	bool result = ringBuffer.offw != ringBuffer.offr;
+	size_t offw = atomic_load_explicit(&ringBuffer.offw, memory_order_acq_rel);
+	size_t offr = atomic_load_explicit(&ringBuffer.offr, memory_order_acq_rel);
+	bool result = offw != offr;
 	return result;
 }
 
