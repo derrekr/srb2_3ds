@@ -6,12 +6,13 @@ A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
 * Download srb2_3ds from the latest release on Github and extract it.
 * If you would like to use the .3dsx file, copy it to /3ds/srb2_3ds on your SD card.
 	If you would like to use the .CIA file, you may copy it at any location on your SD card.
-* Download SRB2's game files: [file1](https://github.com/mazmazz/SRB2/releases/download/SRB2_assets/SRB2-v2122-assets.7z) and [file2](https://github.com/mazmazz/SRB2/releases/download/SRB2_assets/SRB2-v2122-optional-assets.7z) or from [srb2.org](https://www.srb2.org/download/) and extract them to /3ds/srb2_3ds on your SD card.
+* Download SRB2's assets: [file1](https://github.com/mazmazz/SRB2/releases/download/SRB2_assets/SRB2-v2122-assets.7z) and [file2](https://github.com/mazmazz/SRB2/releases/download/SRB2_assets/SRB2-v2122-optional-assets.7z) and extract them to /3ds/srb2_3ds on your SD card.
 	You may also copy the files to the root directory. (Note: make sure any existing config.cfg file is located in the same directory as the game files.)
 * Make sure you have dumped your DSP firmware and dspfirm.cdc is present. If it isn't: install and run the "dspDump" homebrew first.
 
 ## Building
 * Building requires 3ds-sdl and 3ds-sdl_mixer to be installed (use devkitPro's pacman).
+* Build and install [this fork](https://github.com/derrekr/citro3d) of the citro3d 3DS graphics library.
 * makerom is required for building cia.
 
 ## Known Issues/Limitations
