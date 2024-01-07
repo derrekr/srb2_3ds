@@ -42,7 +42,7 @@
 #include "nds_utils.h"
 
 #define GPU_CMDBUF_SIZE		(1024 * 1024 * 8)
-#define GPU_GXQUEUE_SIZE	(1024 * 4)
+#define GPU_GXQUEUE_SIZE	512
 
 #define PALETTE_SIZE		256
 #define PALETTE_CACHE_SIZE	2
@@ -89,7 +89,7 @@ static bool queueWaitEmptyTimeout()
 }
 
 // Never returns NULL
-static queuePacket *queueAllocPacketSafe()
+queuePacket *queueAllocPacketSafe()
 {
 	queuePacket *p = queueAllocPacket();
 	if (!p)
@@ -288,6 +288,12 @@ void NDS3DVIDEO_FinishUpdate(INT32 waitvbl)
 	packet->type = CMD_TYPE_FINISH;
 	/* no args needed */
 	queueEnqueuePacket(packet);
+
+	/* handle apt transitions */
+	if(!aptMainLoop())
+	{
+		I_Quit();
+	}
 }
 
 void NDS3DVIDEO_Stub(void)
@@ -740,22 +746,19 @@ void NDS3DVIDEO_SetTexture(FTextureInfo *TexInfo)
 
 
 	/* Figure out if we want to use mipmaps */
-
 	bool useMipMap = true;
-/*
-	TODO: This causes mimapping to be disabled during a level
 	extern gamestate_t gamestate;
 	switch (gamestate)
 	{
 		case GS_LEVEL:
 			useMipMap = true;
-			cv_grrounddown.value = 1;
+			//cv_grrounddown.value = 1;
+			break;
 		default:
 			useMipMap = false;
-			cv_grrounddown.value = 0;
-			break;
+			//cv_grrounddown.value = 0;
 	}
-*/
+
 
 	/* Allocate texture entity using citro3d */
 

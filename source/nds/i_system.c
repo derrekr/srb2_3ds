@@ -15,13 +15,10 @@
 #include "../i_system.h"
 #include "../i_joy.h"
 #include "nds_utils.h"
+#include "r_queue.h"
 
 UINT8 graphics_started = 0;
 UINT8 keyboard_started = 0;
-
-bool pauseRendering;
-bool renderThreadHang;
-LightEvent rendererResume;
 
 bool isNew3DS = false;
 
@@ -66,6 +63,32 @@ static bool isInGame()
 	return !(paused || menuactive);
 }
 
+static aptHookCookie hookCookie;
+static void AptEventHook(APT_HookType hookType, void* param)
+{
+	switch (hookType) {
+		case APTHOOK_ONSLEEP:
+			// inject pause key press
+			event_t event;
+			event.type = ev_keydown;
+			event.data1 = gamecontrol[gc_pause][0];
+			D_PostEvent(&event);
+			/* fall thru */
+		case APTHOOK_ONSUSPEND:
+			queuePacket *packet = queueAllocPacketSafe();
+			packet->type = CMD_TYPE_SUSPEND;
+			queueEnqueuePacket(packet);
+			//printf("suspend packet sent!\n");
+			while (queuePollForDequeue())
+				svcSleepThread(1000 * 1000);
+			//printf("suspended\n");
+			break;
+		
+		default:
+			break;
+	}
+}
+
 void I_GetEvent(void)
 {
 	static touchPosition last_touch_position;
@@ -99,34 +122,6 @@ void I_GetEvent(void)
 	UINT32 up, down;
 	UINT32 i;
 	bool ingame = isInGame();
-
-	/* handle apt transitions */
-	static int counter;
-	if (aptShouldJumpToHome() || aptShouldClose())
-	{
-		pauseRendering = true;
-		renderThreadHang = true;
-		counter++;
-		//printf("counter: %i\n", counter);
-	}
-
-	// wait one frame before passing control to the menu applet
-	if (counter >= 2) {
-		counter = 0;
-		if(!aptMainLoop())
-		{
-			I_Quit();
-		}
-	}
-
-	if (pauseRendering && !aptShouldJumpToHome() && !aptShouldClose()) {
-		//printf("resuming renderer...\n");
-		renderThreadHang = false;
-		// wakeup renderer
-		LightEvent_Signal(&rendererResume);
-		pauseRendering = false;
-		printf("resumed\n");
-	}
 
 	hidScanInput();
 	up = keysUp();
@@ -425,8 +420,7 @@ INT32 I_StartupSystem(void)
 		osSetSpeedupEnable(true);
 	}
 
-	LightEvent_Init(&rendererResume, RESET_ONESHOT);
-	aptSetSleepAllowed(false);
+	aptHook(&hookCookie, AptEventHook, NULL);
 
 	// early Initialize graphics
 	gfxInitDefault();

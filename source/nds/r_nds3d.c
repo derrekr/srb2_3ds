@@ -54,8 +54,6 @@
 #define MAX_FOG_DENSITY			255
 
 extern LightEvent workerInitialized;
-extern LightEvent rendererResume;
-extern bool renderThreadHang;
 
 // XXX arbitrary near and far plane
 FCOORD NEAR_CLIPPING_PLANE = NZCLIP_PLANE;
@@ -125,17 +123,15 @@ static bool get3DSettings(float *_iod, float *_foclen)
 static void setScreenMode(bool enable_3d)
 {
 	extern consvar_t cv_3dswidemode;
-	bool wideModePrev = wideModeEnabled;
+	static bool wideModePrev;
+	static bool enable_3dPrev;
 
 	if (enable_3d)
 	{
-		gfxSetWide(false);
-		gfxSet3D(true);
 		wideModeEnabled = false;
 	}
 	else
 	{
-		gfxSet3D(false);
 		if (cv_3dswidemode.value)
 		{
 			wideModeEnabled = true;
@@ -143,24 +139,29 @@ static void setScreenMode(bool enable_3d)
 		else wideModeEnabled = false;
 	}
 
-	/* allow smooth transition between modes */
-	if (wideModePrev == wideModeEnabled)
+	if (wideModeEnabled)
 	{
-		if (wideModeEnabled)
-		{
-			gfxSetWide(true);
-			C3D_RenderTargetSetOutput(targetWide,  GFX_TOP, 0,  DISPLAY_TRANSFER_FLAGS);
-		}
-		else
-		{
-			gfxSet3D(enable_3d);
-			C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
-			C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
-		}
+		C3D_RenderTargetSetOutput(targetWide,  GFX_TOP, 0,  DISPLAY_TRANSFER_FLAGS);
 	}
 	else
 	{
-		gfxSetWide(wideModePrev);
+		C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
+		C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
+	}
+
+	/* allow smooth transition between modes */
+	if (wideModePrev != wideModeEnabled || enable_3dPrev != enable_3d)
+	{
+		// wait a couple frames before changing the screen setting
+		for (int i=0; i < 5; i++)
+			C3D_FrameSync();
+
+		if (enable_3d)
+			gfxSet3D(enable_3d);
+		else gfxSetWide(wideModeEnabled);
+
+		enable_3dPrev = enable_3d;
+		wideModePrev = wideModeEnabled;
 	}
 }
 
@@ -393,12 +394,9 @@ static inline void debugPrintPerfStats()
 				*/
 }
 
-/* returns true if we just started a new frame with this call */
+/* returns whether 3d is enabled */
 static bool ensureFrameBegin()
 {
-	if(drawing)
-		return false;
-	
 	//NDS3D_driverLog("Beginning a new frame\n");
 
 	debugPrintPerfStats();
@@ -406,6 +404,9 @@ static bool ensureFrameBegin()
 	u64 time = osGetTime();
 
 	C3D_FrameBegin(0);
+
+	bool enable3d = get3DSettings(&iod, &focalLength);
+	setScreenMode(enable3d);
 
 	C3D_FrameDrawOn(wideModeEnabled ? targetWide : targetLeft);
 	C3D_RenderTargetClear(wideModeEnabled ? targetWide : targetLeft, C3D_CLEAR_ALL, 0, 0);
@@ -417,7 +418,7 @@ static bool ensureFrameBegin()
 	
 	//NDS3D_driverLog("Began a new frame\n");
 
-	return true;
+	return enable3d;
 }
 
 void NDS3D_FinishUpdate()
@@ -899,6 +900,7 @@ static void debugSetTransform(FTransform *ptransform)
 
 void waitForProgress() {
 	while(!queuePollForDequeue()) {
+		//printf("poll\n");
 		queueWaitForEvent(QUEUE_EVENT_NOT_EMPTY, U64_MAX);
 	}
 }
@@ -1093,6 +1095,16 @@ int processRenderQueue(void)
 			{
 				NDS3D_Shutdown();
 				threadExit(0);
+				break;
+			}
+
+			case CMD_TYPE_SUSPEND:
+			{
+				//printf("split\n");
+				C3D_FrameSplit(0);
+				//printf("wait done\n");
+				C3Di_RenderQueueWaitDone();
+				break;
 			}
 
 			default:
@@ -1123,18 +1135,11 @@ void NDS3D_Thread(void)
 
 	for(;;)
 	{
-		while (renderThreadHang) {
-			LightEvent_Wait(&rendererResume);
-		}
-
-		ensureFrameBegin();
+		bool enable3d = ensureFrameBegin();
 
 		/* We are now in a frame ... */
 		bool createdCp = false;
-		bool enable3d = get3DSettings(&iod, &focalLength);
-
-		setScreenMode(enable3d);
-
+		
 next:
 		/* Wait for incoming packets */
 		waitForProgress();

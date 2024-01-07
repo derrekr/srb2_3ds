@@ -20,7 +20,7 @@
 #define CMD_TYPE_TRANSFORM	8
 #define CMD_TYPE_TRANSFRST	9
 #define CMD_TYPE_EXIT		10
-
+#define CMD_TYPE_SUSPEND	11
 
 typedef struct 
 {

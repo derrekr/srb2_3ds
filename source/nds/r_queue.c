@@ -25,7 +25,6 @@ typedef struct {
 
 static queuePacket packets[RINGBUF_SIZE];
 static RingBuffer ringBuffer;
-static LightLock lock;
 static Handle eventNotEmpty;
 static Handle eventEmpty;
 static Handle eventAlmostEmpty;
@@ -61,7 +60,6 @@ bool queueInit()
 	if (svcCreateEvent(&eventAllocOk, RESET_ONESHOT) != 0)
 		goto fail;
 
-	LightLock_Init(&lock);
 	LightEvent_Init(&eventFrameDone, RESET_ONESHOT);
 
 	return initRingBuffer();
@@ -72,7 +70,6 @@ fail:
 	return false;
 }
 
-// lock must be taken
 static size_t queueGetFreeSpace()
 {
 	size_t diff;
@@ -109,7 +106,6 @@ static size_t queueGetFreeSpace()
 	return diff;
 }
 
-// lock must be taken
 bool queueCheckDiff(size_t maxDiff)
 {
 	size_t diff;
