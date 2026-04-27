@@ -1,0 +1,18 @@
+# Default: auto-detect text vs binary, store as LF, check out as LF.
+# Storage already matches upstream SRB2 (LF), so this just stops Git from
+# converting line endings on Windows checkouts and prevents CRLF/LF noise
+# during merges with upstream.
+* text=auto eol=lf
+
+# Windows-only project files: leave alone (upstream stores these as CRLF).
+*.dsp    -text
+*.dsw    -text
+*.sln    -text
+*.vcproj -text
+*.vcxproj         -text
+*.vcxproj.filters -text
+*.csproj -text
+*.bat    -text
+*.dev    -text
+*.resx   -text
+*.manifest        -text
