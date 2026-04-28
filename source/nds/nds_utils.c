@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <ctype.h>
 #include <malloc.h>
 #include <3ds.h>
 

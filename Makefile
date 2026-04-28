@@ -59,6 +59,8 @@ ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
 CFLAGS	:=	-g -Wall -O3 -mword-relocations \
 			-fomit-frame-pointer -ffunction-sections \
+			-std=gnu99 -Wno-error=implicit-function-declaration \
+			-Wno-error=incompatible-pointer-types -Wno-error=int-conversion \
 			$(ARCH)
 DEFINES	:=	-D__3DS__  -DNDS_VERS_STRING=\"$(VERS_STRING)\" \
 			-D_NDS -DNONET -DNO_IPV6 -DNOHS -DNOMD5 -DHAVE_BLUA -DHWRENDER -DNOPOSTPROCESSING -DNOSPLITSCREEN -DDIAGNOSTIC
