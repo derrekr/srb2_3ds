@@ -1,6 +1,7 @@
 
 # SRB2 3DS
 A port of Sonic Robo Blast 2 to the Nintendo New3DS/2DS consoles.
+Based on upstream SRB2 [v2.1.25](https://git.do.srb2.org/STJr/SRB2/-/tags/SRB2_release_2.1.25).
 
 ## Installing
 * Download srb2_3ds from the latest release on Github and extract it.
