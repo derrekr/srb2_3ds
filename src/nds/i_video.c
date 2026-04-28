@@ -72,6 +72,15 @@ static void BottomScreen_OnChange(void);
 consvar_t cv_3dsdisablebottom = {"gr_3dsdisablebottom", "Off",
 	CV_SAVE | CV_CALL, CV_OnOff, BottomScreen_OnChange, 0, NULL, NULL, 0, 0, NULL};
 
+// Render-target color format. Default RGBA8 matches gfxInitDefault's BGR8 screen.
+// RGB565 halves color-write bandwidth but introduces 5/6/5 quantization that can
+// expose tiny RGB888 mismatches between adjacent regions (e.g. intro sprites vs
+// background). Deferred until startup the same way the bottom-screen toggle is.
+static CV_PossibleValue_t rtformat_cons_t[] = {{0, "RGBA8"}, {1, "RGB565"}, {0, NULL}};
+static void RTFormat_OnChange(void);
+consvar_t cv_3dsrtformat = {"gr_3dsrtformat", "RGBA8",
+	CV_SAVE | CV_CALL, rtformat_cons_t, RTFormat_OnChange, 0, NULL, NULL, 0, 0, NULL};
+
 static void BottomScreen_SetBacklight(boolean off)
 {
 	gspLcdInit();
@@ -89,6 +98,14 @@ static void BottomScreen_OnChange(void)
 	if (!gameStartedUp)
 		return;
 	BottomScreen_SetBacklight(cv_3dsdisablebottom.value ? true : false);
+}
+
+static void RTFormat_OnChange(void)
+{
+	// Defer until the renderer is up; I_BottomScreenStartupDone re-invokes this.
+	if (!gameStartedUp)
+		return;
+	NDS3D_RequestRTFormat(cv_3dsrtformat.value ? 1 : 0);
 }
 
 // Restore the backlight to ON, leaving cv_3dsdisablebottom unchanged.
@@ -117,6 +134,7 @@ void I_BottomScreenStartupDone(void)
 		return;
 	gameStartedUp = true;
 	BottomScreen_OnChange();
+	RTFormat_OnChange();
 }
 
 // -------------------------------------------------------

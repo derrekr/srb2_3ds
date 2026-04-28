@@ -40,11 +40,36 @@
 #include "r_texcache.h"
 #include "nds_utils.h"
 
-// Used to transfer the final rendered display to the framebuffer
-#define DISPLAY_TRANSFER_FLAGS \
-	(GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
-	GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) | \
-	GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
+// Used to transfer the final rendered display to the framebuffer.
+// Recomputed whenever the user toggles cv_3dsrtformat (see applyPendingRTFormat).
+static u32 displayTransferFlags;
+
+// Selected at runtime via cv_3dsrtformat. Default RGBA8 matches gfxInitDefault's BGR8 screen.
+static GPU_COLORBUF currentRTColorFormat = GPU_RB_RGBA8;
+static int pendingRTFormat = -1;	// -1 = none pending; 0 = RGBA8; 1 = RGB565
+
+static u32 buildDisplayTransferFlags(GPU_COLORBUF fmt)
+{
+	GX_TRANSFER_FORMAT in_fmt;
+	GX_TRANSFER_FORMAT out_fmt;
+
+	switch (fmt)
+	{
+		case GPU_RB_RGB565:
+			in_fmt  = GX_TRANSFER_FMT_RGB565;
+			out_fmt = GX_TRANSFER_FMT_RGB565;
+			break;
+		case GPU_RB_RGBA8:
+		default:
+			in_fmt  = GX_TRANSFER_FMT_RGBA8;
+			out_fmt = GX_TRANSFER_FMT_RGB8;
+			break;
+	}
+
+	return GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
+	       GX_TRANSFER_IN_FORMAT(in_fmt) | GX_TRANSFER_OUT_FORMAT(out_fmt) |
+	       GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
+}
 
 // Used to convert textures to 3DS tiled format
 // Note: vertical flip flag set so 0,0 is top left of texture
@@ -120,6 +145,52 @@ static bool get3DSettings(float *_iod, float *_foclen)
 	return true;
 }
 
+// Schedules a render-target color-format change. The actual recreation happens
+// at the start of the next frame so we never tear down render targets while
+// the GPU has work in flight. Called from cv_3dsrtformat's OnChange callback.
+void NDS3D_RequestRTFormat(int useRGB565)
+{
+	pendingRTFormat = useRGB565 ? 1 : 0;
+}
+
+// Runs before C3D_FrameBegin so render targets are recreated with the GPU idle.
+// Mirrors the pattern setScreenMode() uses for gfxSet3D/gfxSetWide: drain a few
+// frames first so any pending GPU work has retired and the scanout has caught up.
+static void applyPendingRTFormat(void)
+{
+	if (pendingRTFormat < 0)
+		return;
+
+	GPU_COLORBUF newFormat = (pendingRTFormat == 1) ? GPU_RB_RGB565 : GPU_RB_RGBA8;
+	pendingRTFormat = -1;
+
+	if (newFormat == currentRTColorFormat)
+		return;
+
+	// Drain GPU + scanout, same cadence as the wide-mode swap.
+	for (int i = 0; i < 5; i++)
+		C3D_FrameSync();
+
+	C3D_RenderTargetDelete(targetLeft);
+	C3D_RenderTargetDelete(targetRight);
+	C3D_RenderTargetDelete(targetWide);
+
+	currentRTColorFormat = newFormat;
+	displayTransferFlags = buildDisplayTransferFlags(newFormat);
+
+	// Match the screen framebuffer to the new RT format so the display transfer
+	// doesn't waste bandwidth quantizing into a wider scanout buffer.
+	GSPGPU_FramebufferFormat scrFmt = (newFormat == GPU_RB_RGB565)
+		? GSP_RGB565_OES
+		: GSP_BGR8_OES;
+	gfxSetScreenFormat(GFX_TOP, scrFmt);
+
+	targetLeft  = C3D_RenderTargetCreate(240, 400, currentRTColorFormat, GPU_RB_DEPTH24_STENCIL8);
+	targetRight = C3D_RenderTargetCreate(240, 400, currentRTColorFormat, GPU_RB_DEPTH24_STENCIL8);
+	targetWide  = C3D_RenderTargetCreate(240, 800, currentRTColorFormat, GPU_RB_DEPTH24_STENCIL8);
+	// setScreenMode() rebinds these to GFX_TOP outputs on its next call.
+}
+
 static void setScreenMode(bool enable_3d)
 {
 	extern consvar_t cv_3dswidemode;
@@ -141,12 +212,12 @@ static void setScreenMode(bool enable_3d)
 
 	if (wideModeEnabled)
 	{
-		C3D_RenderTargetSetOutput(targetWide,  GFX_TOP, 0,  DISPLAY_TRANSFER_FLAGS);
+		C3D_RenderTargetSetOutput(targetWide,  GFX_TOP, 0,  displayTransferFlags);
 	}
 	else
 	{
-		C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
-		C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
+		C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  displayTransferFlags);
+		C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, displayTransferFlags);
 	}
 
 	/* allow smooth transition between modes */
@@ -322,15 +393,19 @@ boolean NDS3D_Init()
 {	
 	NDS3D_driverLog("NDS3D_Init\n");
 
-	// Initialize the render targets
-	targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
-	targetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
-	C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
+	// Initialize the render targets at the default format. The user can toggle to
+	// RGB565 at runtime via cv_3dsrtformat, which calls NDS3D_RequestRTFormat().
+	currentRTColorFormat = GPU_RB_RGBA8;
+	displayTransferFlags = buildDisplayTransferFlags(currentRTColorFormat);
+
+	targetLeft  = C3D_RenderTargetCreate(240, 400, currentRTColorFormat, GPU_RB_DEPTH24_STENCIL8);
+	targetRight = C3D_RenderTargetCreate(240, 400, currentRTColorFormat, GPU_RB_DEPTH24_STENCIL8);
+	C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  displayTransferFlags);
 	C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, 0, 0);
-	C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
+	C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, displayTransferFlags);
 	C3D_RenderTargetClear(targetRight, C3D_CLEAR_ALL, 0, 0);
 
-	targetWide  = C3D_RenderTargetCreate(240, 800, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+	targetWide  = C3D_RenderTargetCreate(240, 800, currentRTColorFormat, GPU_RB_DEPTH24_STENCIL8);
 	
 	InitTextureUnits();
 
@@ -402,6 +477,8 @@ static bool ensureFrameBegin()
 	debugPrintPerfStats();
 
 	u64 time = osGetTime();
+
+	applyPendingRTFormat();
 
 	C3D_FrameBegin(0);
 

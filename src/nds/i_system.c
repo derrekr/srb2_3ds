@@ -436,6 +436,9 @@ INT32 I_StartupSystem(void)
 	aptHook(&hookCookie, AptEventHook, NULL);
 
 	// early Initialize graphics
+	// Top-screen format is selected at runtime by NDS3D_ApplyRTFormat() based on
+	// cv_3dsrtformat; libctru's default (BGR8 on both screens) pairs with the
+	// default RGBA8 render target.
 	gfxInitDefault();
 	consoleInit(GFX_BOTTOM, NULL);
 

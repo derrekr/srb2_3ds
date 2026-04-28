@@ -82,4 +82,8 @@ void NDS3D_MakeScreenTexture(void);
 void NDS3D_MakeScreenFinalTexture(void);
 void NDS3D_DrawScreenFinalTexture(int width, int height);
 
+// Switch render-target color format at the next frame boundary.
+// useRGB565: 0 = RGBA8 (default), 1 = RGB565 (16-bit, halves color-write bandwidth).
+void NDS3D_RequestRTFormat(int useRGB565);
+
 #endif

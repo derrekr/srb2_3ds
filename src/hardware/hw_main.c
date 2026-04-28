@@ -6202,9 +6202,11 @@ void HWR_AddCommands(void)
     extern consvar_t cv_3dsfoclen;
 	extern consvar_t cv_3dswidemode;
 	extern consvar_t cv_3dsdisablebottom;
+	extern consvar_t cv_3dsrtformat;
     CV_RegisterVar(&cv_3dsfoclen);
 	CV_RegisterVar(&cv_3dswidemode);
 	CV_RegisterVar(&cv_3dsdisablebottom);
+	CV_RegisterVar(&cv_3dsrtformat);
 #endif
 	CV_RegisterVar(&cv_grfiltermode);
 	CV_RegisterVar(&cv_granisotropicmode);
