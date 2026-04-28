@@ -13,6 +13,7 @@
 ///	        FS_FOUND
 
 #include <stdio.h>
+#include <errno.h>
 #ifdef __GNUC__
 #include <dirent.h>
 #endif
@@ -800,7 +801,21 @@ boolean preparefilemenu(boolean samedepth)
 		I_Error("preparefilemenu(): could not reallocate coredirmenu.");
 	}
 
+#ifdef __3DS__
+	// libctru's rewinddir() doesn't reset the iterator on the SD filesystem,
+	// so the second pass would readdir nothing and the menu would render as
+	// "No files/folders found." Close + reopen instead.
+	closedir(dirhandle);
+	if (!(dirhandle = opendir(menupath)))
+	{
+		closefilemenu(false);
+		if (tempname)
+			Z_Free(tempname);
+		return false;
+	}
+#else
 	rewinddir(dirhandle);
+#endif
 
 	while ((pos+folderpos) < sizecoredirmenu)
 	{

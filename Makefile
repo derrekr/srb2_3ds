@@ -63,7 +63,7 @@ CFLAGS	:=	-g -Wall -O3 -mword-relocations \
 			-Wno-error=incompatible-pointer-types -Wno-error=int-conversion \
 			$(ARCH)
 DEFINES	:=	-D__3DS__  -DNDS_VERS_STRING=\"$(VERS_STRING)\" \
-			-D_NDS -DNONET -DNO_IPV6 -DNOHS -DNOMD5 -DHAVE_BLUA -DHWRENDER -DNOPOSTPROCESSING -DNOSPLITSCREEN -DDIAGNOSTIC
+			-D_NDS -DNONET -DNO_IPV6 -DNOHS -DNOMD5 -DHAVE_BLUA -DHAVE_ZLIB -DHWRENDER -DNOPOSTPROCESSING -DNOSPLITSCREEN -DDIAGNOSTIC
 
 CFLAGS	+=	$(INCLUDE) $(DEFINES)
 
@@ -72,7 +72,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -z muldefs
 
-LIBS	:= -lSDL_mixer -lmikmod -lmad -lvorbisidec -logg -lSDL -lcitro3d -lctru -lm
+LIBS	:= -lSDL_mixer -lmikmod -lmad -lvorbisidec -logg -lSDL -lcitro3d -lctru -lz -lm
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
