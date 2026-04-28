@@ -63,6 +63,9 @@ static bool isInGame()
 	return !(paused || menuactive);
 }
 
+extern void I_BottomScreenForceOn(void);
+extern void I_BottomScreenReapply(void);
+
 static aptHookCookie hookCookie;
 static void AptEventHook(APT_HookType hookType, void* param)
 {
@@ -75,6 +78,9 @@ static void AptEventHook(APT_HookType hookType, void* param)
 			D_PostEvent(&event);
 			/* fall thru */
 		case APTHOOK_ONSUSPEND:
+			// Restore bottom backlight so the HOME menu / sleep UI isn't
+			// shown on a dark panel. Reapplied on ONRESTORE below.
+			I_BottomScreenForceOn();
 			queuePacket *packet = queueAllocPacketSafe();
 			packet->type = CMD_TYPE_SUSPEND;
 			queueEnqueuePacket(packet);
@@ -83,7 +89,14 @@ static void AptEventHook(APT_HookType hookType, void* param)
 				svcSleepThread(1000 * 1000);
 			//printf("suspended\n");
 			break;
-		
+
+		case APTHOOK_ONRESTORE:
+		case APTHOOK_ONWAKEUP:
+			// Re-apply user's bottom-screen preference (system may have
+			// powered the panel back on while we were suspended/asleep).
+			I_BottomScreenReapply();
+			break;
+
 		default:
 			break;
 	}

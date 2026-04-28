@@ -1461,6 +1461,11 @@ void F_GameEndTicker(void)
 // ==============
 void F_StartTitleScreen(void)
 {
+#ifdef __3DS__
+	extern void I_BottomScreenStartupDone(void);
+	I_BottomScreenStartupDone(); // first title screen marks end of startup
+#endif
+
 	if (gamestate != GS_TITLESCREEN && gamestate != GS_WAITINGPLAYERS)
 		finalecount = 0;
 	else

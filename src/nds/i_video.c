@@ -65,6 +65,60 @@ CV_PossibleValue_t CV_3dsfoclen[] = {{50, "1"}, {60, "2"}, {70, "3"}, {80, "4"},
 consvar_t cv_3dsfoclen = {"gr_3dsfoclen", "5", CV_SAVE, CV_3dsfoclen,
                              NULL, 0, NULL, NULL, 0, 0, NULL};
 
+// Bottom-screen power. Deferred until after the first rendered frame so
+// the boot console (consoleInit on GFX_BOTTOM) stays visible during startup.
+static boolean gameStartedUp = false;
+static void BottomScreen_OnChange(void);
+consvar_t cv_3dsdisablebottom = {"gr_3dsdisablebottom", "Off",
+	CV_SAVE | CV_CALL, CV_OnOff, BottomScreen_OnChange, 0, NULL, NULL, 0, 0, NULL};
+
+static void BottomScreen_SetBacklight(boolean off)
+{
+	gspLcdInit();
+	if (off)
+		GSPLCD_PowerOffBacklight(GSPLCD_SCREEN_BOTTOM);
+	else
+		GSPLCD_PowerOnBacklight(GSPLCD_SCREEN_BOTTOM);
+	gspLcdExit();
+}
+
+static void BottomScreen_OnChange(void)
+{
+	// Defer power state changes until after startup; the first I_FinishUpdate
+	// call will re-invoke this once gameStartedUp flips.
+	if (!gameStartedUp)
+		return;
+	BottomScreen_SetBacklight(cv_3dsdisablebottom.value ? true : false);
+}
+
+// Restore the backlight to ON, leaving cv_3dsdisablebottom unchanged.
+// Called on app exit and when the user opens the HOME menu, so the system
+// doesn't display its own UI on a dark panel.
+void I_BottomScreenForceOn(void)
+{
+	if (!gameStartedUp)
+		return;
+	BottomScreen_SetBacklight(false);
+}
+
+// Re-apply the saved cvar value. Called on resume from HOME menu, since the
+// system may have turned the bottom backlight back on while we were paused.
+void I_BottomScreenReapply(void)
+{
+	BottomScreen_OnChange();
+}
+
+// Called from F_StartTitleScreen the first time the title screen appears.
+// Marks startup as done and applies the saved bottom-screen preference; the
+// boot console on the lower screen stays visible until this point.
+void I_BottomScreenStartupDone(void)
+{
+	if (gameStartedUp)
+		return;
+	gameStartedUp = true;
+	BottomScreen_OnChange();
+}
+
 // -------------------------------------------------------
 
 LightEvent workerInitialized;
@@ -990,6 +1044,7 @@ void I_StartupGraphics(void)
 
 void I_ShutdownGraphics(void)
 {
+	I_BottomScreenForceOn();
 	HWD.pfnShutdown();
 }
 
@@ -1040,6 +1095,7 @@ void I_FinishUpdate(void)
     	return;
     }
     hasDrawn = false;
+
 
 
     /*

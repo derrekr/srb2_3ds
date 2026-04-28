@@ -1133,6 +1133,7 @@ static menuitem_t OP_VideoModeMenu[] =
 #ifdef HWRENDER
 extern consvar_t cv_3dsfoclen;
 extern consvar_t cv_3dswidemode;
+extern consvar_t cv_3dsdisablebottom;
 static menuitem_t OP_OpenGLOptionsMenu[] =
 {
 	{IT_STRING|IT_CVAR,         NULL, "Field of view",   &cv_grfov,            10},
@@ -1142,10 +1143,11 @@ static menuitem_t OP_OpenGLOptionsMenu[] =
 #else
 	{IT_STRING|IT_CVAR,         NULL, "Stereo.3D Focal Length",  &cv_3dsfoclen,     30},
 	{IT_STRING|IT_CVAR,         NULL, "Wide Screen Mode (240x800 px)",  &cv_3dswidemode,     40},
+	{IT_STRING|IT_CVAR,         NULL, "Disable Bottom Screen",  &cv_3dsdisablebottom,    50},
 #endif
-	{IT_STRING|IT_CVAR,         NULL, "Anisotropic",     &cv_granisotropicmode,50},
+	{IT_STRING|IT_CVAR,         NULL, "Anisotropic",     &cv_granisotropicmode,60},
 #ifdef _WINDOWS
-	{IT_STRING|IT_CVAR,         NULL, "Fullscreen",      &cv_fullscreen,       60},
+	{IT_STRING|IT_CVAR,         NULL, "Fullscreen",      &cv_fullscreen,       70},
 #endif
 #ifdef ALAM_LIGHTING
 	{IT_SUBMENU|IT_STRING,      NULL, "Lighting...",     &OP_OpenGLLightingDef,     80},
