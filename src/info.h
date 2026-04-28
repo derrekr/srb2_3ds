@@ -2,7 +2,7 @@
 //-----------------------------------------------------------------------------
 // Copyright (C) 1993-1996 by id Software, Inc.
 // Copyright (C) 1998-2000 by DooM Legacy Team.
-// Copyright (C) 1999-2016 by Sonic Team Junior.
+// Copyright (C) 1999-2018 by Sonic Team Junior.
 //
 // This program is free software distributed under the
 // terms of the GNU General Public License, version 2.
@@ -210,7 +210,7 @@ void A_NapalmScatter();
 void A_SpawnFreshCopy();
 
 // ratio of states to sprites to mobj types is roughly 6 : 1 : 1
-#define NUMMOBJFREESLOTS 256
+#define NUMMOBJFREESLOTS 512
 #define NUMSPRITEFREESLOTS NUMMOBJFREESLOTS
 #define NUMSTATEFREESLOTS (NUMMOBJFREESLOTS*8)
 

@@ -2,7 +2,7 @@
 //-----------------------------------------------------------------------------
 // Copyright (C) 1993-1996 by id Software, Inc.
 // Copyright (C) 1998-2000 by DooM Legacy Team.
-// Copyright (C) 1999-2016 by Sonic Team Junior.
+// Copyright (C) 1999-2018 by Sonic Team Junior.
 //
 // This program is free software distributed under the
 // terms of the GNU General Public License, version 2.
@@ -24,7 +24,7 @@
 //
 
 // Called by main loop.
-FUNCMATH void ST_Ticker(void);
+void ST_Ticker(void);
 
 // Called by main loop.
 void ST_Drawer(void);
@@ -58,6 +58,7 @@ boolean ST_SameTeam(player_t *a, player_t *b);
 //--------------------
 
 extern boolean st_overlay; // sb overlay on or off when fullscreen
+extern INT32 st_palette; // 0 is default, any others are special palettes.
 
 extern lumpnum_t st_borderpatchnum;
 // patches, also used in intermission

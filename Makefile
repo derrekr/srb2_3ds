@@ -35,13 +35,13 @@ VERS_STRING := $(shell git describe --tags --match v[0-9]* --abbrev=8 | sed 's/-
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES := source \
-			source/nds \
-			source/hardware \
-			source/blua \
+SOURCES := src \
+			src/nds \
+			src/hardware \
+			src/blua \
 
 DATA		:=	data
-INCLUDES	:=	source
+INCLUDES	:=	src
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
@@ -207,6 +207,7 @@ CFILES		:=	i_main.o \
 				lvm.o    \
 				lzio.o    \
 				lua_baselib.o    \
+				lua_blockmaplib.o    \
 				lua_consolelib.o    \
 				lua_hooklib.o    \
 				lua_hudlib.o    \

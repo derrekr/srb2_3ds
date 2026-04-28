@@ -2,7 +2,7 @@
 //-----------------------------------------------------------------------------
 // Copyright (C) 1993-1996 by id Software, Inc.
 // Copyright (C) 1998-2000 by DooM Legacy Team.
-// Copyright (C) 1999-2016 by Sonic Team Junior.
+// Copyright (C) 1999-2018 by Sonic Team Junior.
 //
 // This program is free software distributed under the
 // terms of the GNU General Public License, version 2.
@@ -74,6 +74,7 @@ int	snprintf(char *str, size_t n, const char *fmt, ...);
 #include "m_cond.h" // condition initialization
 #include "fastcmp.h"
 #include "keys.h"
+#include "filesrch.h" // refreshdirmenu, mainwadstally
 
 #ifdef CMAKECONFIG
 #include "config.h"
@@ -122,8 +123,8 @@ postimg_t postimgtype2 = postimg_none;
 INT32 postimgparam2;
 
 // These variables are only true if
-// the respective sound system is initialized
-// and active, but no sounds/music should play.
+// whether the respective sound system is disabled
+// or they're init'ed, but the player just toggled them
 #ifdef _XBOX
 boolean midi_disabled = true, sound_disabled = true;
 boolean digital_disabled = true;
@@ -132,7 +133,6 @@ boolean midi_disabled = false;
 boolean sound_disabled = false;
 boolean digital_disabled = false;
 #endif
-
 
 boolean advancedemo;
 #ifdef DEBUGFILE
@@ -173,41 +173,16 @@ void D_PostEvent(const event_t *ev)
 	eventhead = (eventhead+1) & (MAXEVENTS-1);
 }
 // just for lock this function
-#ifndef DOXYGEN
+#if defined (PC_DOS) && !defined (DOXYGEN)
 void D_PostEvent_end(void) {};
 #endif
 
 // modifier keys
+// Now handled in I_OsPolling
 UINT8 shiftdown = 0; // 0x1 left, 0x2 right
 UINT8 ctrldown = 0; // 0x1 left, 0x2 right
 UINT8 altdown = 0; // 0x1 left, 0x2 right
-//
-// D_ModifierKeyResponder
-// Sets global shift/ctrl/alt variables, never actually eats events
-//
-static inline void D_ModifierKeyResponder(event_t *ev)
-{
-	if (ev->type == ev_keydown || ev->type == ev_console) switch (ev->data1)
-	{
-		case KEY_LSHIFT: shiftdown |= 0x1; return;
-		case KEY_RSHIFT: shiftdown |= 0x2; return;
-		case KEY_LCTRL: ctrldown |= 0x1; return;
-		case KEY_RCTRL: ctrldown |= 0x2; return;
-		case KEY_LALT: altdown |= 0x1; return;
-		case KEY_RALT: altdown |= 0x2; return;
-		default: return;
-	}
-	else if (ev->type == ev_keyup) switch (ev->data1)
-	{
-		case KEY_LSHIFT: shiftdown &= ~0x1; return;
-		case KEY_RSHIFT: shiftdown &= ~0x2; return;
-		case KEY_LCTRL: ctrldown &= ~0x1; return;
-		case KEY_RCTRL: ctrldown &= ~0x2; return;
-		case KEY_LALT: altdown &= ~0x1; return;
-		case KEY_RALT: altdown &= ~0x2; return;
-		default: return;
-	}
-}
+boolean capslock = 0;	// gee i wonder what this does.
 
 //
 // D_ProcessEvents
@@ -220,9 +195,6 @@ void D_ProcessEvents(void)
 	for (; eventtail != eventhead; eventtail = (eventtail+1) & (MAXEVENTS-1))
 	{
 		ev = &events[eventtail];
-
-		// Set global shift/ctrl/alt down variables
-		D_ModifierKeyResponder(ev); // never eats events
 
 		// Screenshots over everything so that they can be taken anywhere.
 		if (M_ScreenshotResponder(ev))
@@ -322,8 +294,7 @@ static void D_Display(void)
 			if (!gametic)
 				break;
 			HU_Erase();
-			if (automapactive)
-				AM_Drawer();
+			AM_Drawer();
 			break;
 
 		case GS_INTERMISSION:
@@ -377,12 +348,10 @@ static void D_Display(void)
 			break;
 	}
 
-	// clean up border stuff
-	// see if the border needs to be initially drawn
 	if (gamestate == GS_LEVEL)
 	{
 		// draw the view directly
-		if (!automapactive && !dedicated && cv_renderview.value)
+		if (cv_renderview.value && !automapactive)
 		{
 			if (players[displayplayer].mo || players[displayplayer].playerstate == PST_DEAD)
 			{
@@ -420,10 +389,13 @@ static void D_Display(void)
 			}
 
 			// Image postprocessing effect
-			if (postimgtype)
-				V_DoPostProcessor(0, postimgtype, postimgparam);
-			if (postimgtype2)
-				V_DoPostProcessor(1, postimgtype2, postimgparam2);
+			if (rendermode == render_soft)
+			{
+				if (postimgtype)
+					V_DoPostProcessor(0, postimgtype, postimgparam);
+				if (postimgtype2)
+					V_DoPostProcessor(1, postimgtype2, postimgparam2);
+			}
 		}
 
 		if (lastdraw)
@@ -437,7 +409,6 @@ static void D_Display(void)
 		}
 
 		ST_Drawer();
-
 		HU_Drawer();
 	}
 
@@ -594,6 +565,8 @@ void D_SRB2Loop(void)
 		realtics = entertic - oldentertics;
 		oldentertics = entertic;
 
+		refreshdirmenu = 0; // not sure where to put this, here as good as any?
+
 #ifdef DEBUGFILE
 		if (!realtics)
 			if (debugload)
@@ -730,14 +703,12 @@ void D_StartTitle(void)
 	maptol = 0;
 
 	gameaction = ga_nothing;
-	playerdeadview = false;
 	displayplayer = consoleplayer = 0;
 	//demosequence = -1;
 	gametype = GT_COOP;
 	paused = false;
 	advancedemo = false;
 	F_StartTitleScreen();
-	CON_ToggleOff();
 
 	// Reset the palette
 	if (rendermode != render_none)
@@ -774,10 +745,6 @@ static inline void D_CleanFile(void)
 		startupwadfiles[pnumwadfiles] = NULL;
 	}
 }
-
-#ifndef _MAX_PATH
-#define _MAX_PATH MAX_WADPATH
-#endif
 
 // ==========================================================================
 // Identify the SRB2 version, and IWAD file to use.
@@ -840,7 +807,7 @@ static void IdentifyVersion(void)
 	else if (srb2wad1 != NULL && FIL_ReadFileOK(srb2wad1))
 		D_AddFile(srb2wad1);
 	else
-		I_Error("SRB2.SRB/SRB2.WAD not found! Expected in %s, ss files: %s and %s\n", srb2waddir, srb2wad1, srb2wad2);
+		I_Error("SRB2.SRB/SRB2.WAD not found! Expected in %s, ss files: %s or %s\n", srb2waddir, srb2wad1, srb2wad2);
 
 	if (srb2wad1)
 		free(srb2wad1);
@@ -866,17 +833,21 @@ static void IdentifyVersion(void)
 
 #if !defined (HAVE_SDL) || defined (HAVE_MIXER)
 	{
+#define MUSICTEST(str) \
+		{\
+			const char *musicpath = va(pandf,srb2waddir,str);\
+			int ms = W_VerifyNMUSlumps(musicpath); \
+			if (ms == 1) \
+				D_AddFile(musicpath); \
+			else if (ms == 0) \
+				I_Error("File "str" has been modified with non-music/sound lumps"); \
+		}
+
 #if defined (DC) && 0
-		const char *musicfile = "music_dc.dta";
+		MUSICTEST("music_dc.dta")
 #else
-		const char *musicfile = "music.dta";
+		MUSICTEST("music.dta")
 #endif
-		const char *musicpath = va(pandf,srb2waddir,musicfile);
-		int ms = W_VerifyNMUSlumps(musicpath); // Don't forget the music!
-		if (ms == 1)
-			D_AddFile(musicpath);
-		else if (ms == 0)
-			I_Error("File %s has been modified with non-music lumps",musicfile);
 	}
 #endif
 }
@@ -942,6 +913,20 @@ void D_SRB2Main(void)
 
 	INT32 pstartmap = 1;
 	boolean autostart = false;
+
+	// Print GPL notice for our console users (Linux)
+	CONS_Printf(
+	"\n\nSonic Robo Blast 2\n"
+	"Copyright (C) 1998-2018 by Sonic Team Junior\n\n"
+	"This program comes with ABSOLUTELY NO WARRANTY.\n\n"
+	"This is free software, and you are welcome to redistribute it\n"
+	"and/or modify it under the terms of the GNU General Public License\n"
+	"as published by the Free Software Foundation; either version 2 of\n"
+	"the License, or (at your option) any later version.\n"
+	"See the 'LICENSE.txt' file for details.\n\n"
+	"Sonic the Hedgehog and related characters are trademarks of SEGA.\n"
+	"We do not claim ownership of SEGA's intellectual property used\n"
+	"in this program.\n\n");
 
 	// keep error messages until the final flush(stderr)
 #if !defined (PC_DOS) && !defined (_WIN32_WCE) && !defined(NOTERMIOS)
@@ -1062,15 +1047,6 @@ void D_SRB2Main(void)
 
 	if (M_CheckParm("-password") && M_IsNextParm())
 		D_SetPassword(M_GetNextParm());
-	else
-	{
-		size_t z;
-		char junkpw[25];
-		for (z = 0; z < 24; z++)
-			junkpw[z] = (char)(rand() & 64)+32;
-		junkpw[24] = '\0';
-		D_SetPassword(junkpw);
-	}
 
 	// add any files specified on the command line with -file wadfile
 	// to the wad list
@@ -1137,6 +1113,10 @@ void D_SRB2Main(void)
 	// Setup default unlockable conditions
 	M_SetupDefaultConditionSets();
 
+	// Setup character tables
+	// Have to be done here before files are loaded
+	M_InitCharacterTables();
+
 	// load wad, including the main wad file
 	CONS_Printf("W_InitMultipleFiles(): Adding IWAD and main PWADs.\n");
 	if (!W_InitMultipleFiles(startupwadfiles))
@@ -1147,25 +1127,36 @@ void D_SRB2Main(void)
 #endif
 	D_CleanFile();
 
+	mainwads = 0;
+
 #ifndef DEVELOP // md5s last updated 12/14/14
 
 	// Check MD5s of autoloaded files
-	W_VerifyFileMD5(0, ASSET_HASH_SRB2_SRB); // srb2.srb/srb2.wad
-	W_VerifyFileMD5(1, ASSET_HASH_ZONES_DTA); // zones.dta
-	W_VerifyFileMD5(2, ASSET_HASH_PLAYER_DTA); // player.dta
-	W_VerifyFileMD5(3, ASSET_HASH_RINGS_DTA); // rings.dta
+	W_VerifyFileMD5(mainwads++, ASSET_HASH_SRB2_SRB); // srb2.srb/srb2.wad
+	W_VerifyFileMD5(mainwads++, ASSET_HASH_ZONES_DTA); // zones.dta
+	W_VerifyFileMD5(mainwads++, ASSET_HASH_PLAYER_DTA); // player.dta
+	W_VerifyFileMD5(mainwads++, ASSET_HASH_RINGS_DTA); // rings.dta
 #ifdef USE_PATCH_DTA
-	W_VerifyFileMD5(4, ASSET_HASH_PATCH_DTA); // patch.dta
+	W_VerifyFileMD5(mainwads++, ASSET_HASH_PATCH_DTA); // patch.dta
 #endif
-
 	// don't check music.dta because people like to modify it, and it doesn't matter if they do
 	// ...except it does if they slip maps in there, and that's what W_VerifyNMUSlumps is for.
+	//mainwads++; // music.dta does not increment mainwads (see <= 2.1.21)
+
+#else
+
+	mainwads++;	// srb2.srb/srb2.wad
+	mainwads++; // zones.dta
+	mainwads++; // player.dta
+	mainwads++; // rings.dta
+#ifdef USE_PATCH_DTA
+	mainwads++; // patch.dta
+#endif
+	//mainwads++; // music.dta does not increment mainwads (see <= 2.1.21)
+
 #endif //ifndef DEVELOP
 
-	mainwads = 4; // there are 4 wads not to unload
-#ifdef USE_PATCH_DTA
-	++mainwads; // patch.dta adds one more
-#endif
+	mainwadstally = packetsizetally;
 
 	cht_Init();
 
@@ -1246,7 +1237,7 @@ void D_SRB2Main(void)
 	else
 	{
 		if (M_CheckParm("-nomidimusic"))
-			midi_disabled = true; ; // WARNING: DOS version initmusic in I_StartupSound
+			midi_disabled = true; // WARNING: DOS version initmusic in I_StartupSound
 		if (M_CheckParm("-nodigmusic"))
 			digital_disabled = true; // WARNING: DOS version initmusic in I_StartupSound
 	}
@@ -1354,13 +1345,9 @@ void D_SRB2Main(void)
 			INT16 newgametype = -1;
 			const char *sgametype = M_GetNextParm();
 
-			for (j = 0; gametype_cons_t[j].strvalue; j++)
-				if (!strcasecmp(gametype_cons_t[j].strvalue, sgametype))
-				{
-					newgametype = (INT16)gametype_cons_t[j].value;
-					break;
-				}
-			if (!gametype_cons_t[j].strvalue) // reached end of the list with no match
+			newgametype = G_GetGametypeByName(sgametype);
+
+			if (newgametype == -1) // reached end of the list with no match
 			{
 				j = atoi(sgametype); // assume they gave us a gametype number, which is okay too
 				if (j >= 0 && j < NUMGAMETYPES)
@@ -1392,12 +1379,12 @@ void D_SRB2Main(void)
 	}
 	else if (M_CheckParm("-skipintro"))
 	{
-		CON_ToggleOff();
-		CON_ClearHUD();
 		F_StartTitleScreen();
 	}
 	else
 		F_StartIntro(); // Tails 03-03-2002
+
+	CON_ToggleOff();
 
 	if (dedicated && server)
 	{

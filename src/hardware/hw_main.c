@@ -3450,7 +3450,6 @@ static void HWR_Subsector(size_t num)
 
 	if (num < numsubsectors)
 	{
-		sscount++;
 		// subsector
 		sub = &subsectors[num];
 		// sector

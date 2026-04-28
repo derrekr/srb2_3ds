@@ -1,7 +1,7 @@
 // SONIC ROBO BLAST 2
 //-----------------------------------------------------------------------------
 // Copyright (C) 2006      by James Haley
-// Copyright (C) 2006-2016 by Sonic Team Junior.
+// Copyright (C) 2006-2018 by Sonic Team Junior.
 //
 // This program is free software distributed under the
 // terms of the GNU General Public License, version 2.
@@ -1859,6 +1859,10 @@ void T_PolyObjWaypoint(polywaypoint_t *th)
 		diffz = po->lines[0]->backsector->floorheight - (target->z - amtz);
 		po->lines[0]->backsector->floorheight = target->z - amtz;
 		po->lines[0]->backsector->ceilingheight = target->z + amtz;
+		// Sal: Remember to check your sectors!
+		// Monster Iestyn: we only need to bother with the back sector, now that P_CheckSector automatically checks the blockmap
+		//  updating objects in the front one too just added teleporting to ground bugs
+		P_CheckSector(po->lines[0]->backsector, (boolean)(po->damage));
 		// Apply action to mirroring polyobjects as well
 		start = 0;
 		while ((po = Polyobj_GetChild(oldpo, &start)))
@@ -1870,6 +1874,10 @@ void T_PolyObjWaypoint(polywaypoint_t *th)
 			// TODO: use T_MovePlane
 			po->lines[0]->backsector->floorheight += diffz; // move up/down by same amount as the parent did
 			po->lines[0]->backsector->ceilingheight += diffz;
+			// Sal: Remember to check your sectors!
+			// Monster Iestyn: we only need to bother with the back sector, now that P_CheckSector automatically checks the blockmap
+			//  updating objects in the front one too just added teleporting to ground bugs
+			P_CheckSector(po->lines[0]->backsector, (boolean)(po->damage));
 		}
 
 		po = oldpo;
@@ -2030,6 +2038,10 @@ void T_PolyObjWaypoint(polywaypoint_t *th)
 	// TODO: use T_MovePlane
 	po->lines[0]->backsector->floorheight += momz;
 	po->lines[0]->backsector->ceilingheight += momz;
+	// Sal: Remember to check your sectors!
+	// Monster Iestyn: we only need to bother with the back sector, now that P_CheckSector automatically checks the blockmap
+	//  updating objects in the front one too just added teleporting to ground bugs
+	P_CheckSector(po->lines[0]->backsector, (boolean)(po->damage));
 
 	// Apply action to mirroring polyobjects as well
 	start = 0;
@@ -2042,6 +2054,10 @@ void T_PolyObjWaypoint(polywaypoint_t *th)
 		// TODO: use T_MovePlane
 		po->lines[0]->backsector->floorheight += momz;
 		po->lines[0]->backsector->ceilingheight += momz;
+		// Sal: Remember to check your sectors!
+		// Monster Iestyn: we only need to bother with the back sector, now that P_CheckSector automatically checks the blockmap
+		//  updating objects in the front one too just added teleporting to ground bugs
+		P_CheckSector(po->lines[0]->backsector, (boolean)(po->damage));
 	}
 }
 
