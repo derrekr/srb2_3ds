@@ -25,6 +25,10 @@
 // Object place
 #include "m_cheat.h"
 
+#ifdef __3DS__
+#include <3ds.h>
+#endif
+
 tic_t leveltime;
 
 //
@@ -272,6 +276,254 @@ if ((*mop = targ) != NULL) // Set new target and if non-NULL, increase its count
 	return targ;
 }
 
+#ifdef __3DS__
+// Per-thinker-type CPU profiler. Toggled by the "thinkertimes" console
+// command. Times each thinker call via svcGetSystemTick() and bins by
+// function pointer. Prints one line per non-zero bucket every wall second.
+// When disabled, the profiled loop is skipped entirely (zero overhead).
+
+#define TPROF_TICKS_PER_SEC 268111856ULL // ARM11 CP15 timer rate
+
+typedef struct
+{
+	const char *name;
+	actionf_p1 fn;
+	u64 acc_ticks;
+	u32 calls;
+} thinker_bucket_t;
+
+static thinker_bucket_t thinker_buckets[] = {
+	{ "P_MobjThinker         ", (actionf_p1)P_MobjThinker,          0, 0 },
+	{ "P_NullPrecipThinker   ", (actionf_p1)P_NullPrecipThinker,    0, 0 },
+	{ "T_Friction            ", (actionf_p1)T_Friction,             0, 0 },
+	{ "T_Pusher              ", (actionf_p1)T_Pusher,               0, 0 },
+	{ "T_Scroll              ", (actionf_p1)T_Scroll,               0, 0 },
+	{ "T_MoveFloor           ", (actionf_p1)T_MoveFloor,            0, 0 },
+	{ "T_MoveCeiling         ", (actionf_p1)T_MoveCeiling,          0, 0 },
+	{ "T_MoveElevator        ", (actionf_p1)T_MoveElevator,         0, 0 },
+	{ "T_StartCrumble        ", (actionf_p1)T_StartCrumble,         0, 0 },
+	{ "T_BounceCheese        ", (actionf_p1)T_BounceCheese,         0, 0 },
+	{ "T_FloatSector         ", (actionf_p1)T_FloatSector,          0, 0 },
+	{ "T_RaiseSector         ", (actionf_p1)T_RaiseSector,          0, 0 },
+	{ "T_ContinuousFalling   ", (actionf_p1)T_ContinuousFalling,    0, 0 },
+	{ "T_SpikeSector         ", (actionf_p1)T_SpikeSector,          0, 0 },
+	{ "T_NoEnemiesSector     ", (actionf_p1)T_NoEnemiesSector,      0, 0 },
+	{ "T_EachTimeThinker     ", (actionf_p1)T_EachTimeThinker,      0, 0 },
+	{ "T_FireFlicker         ", (actionf_p1)T_FireFlicker,          0, 0 },
+	{ "T_LightningFlash      ", (actionf_p1)T_LightningFlash,       0, 0 },
+	{ "T_StrobeFlash         ", (actionf_p1)T_StrobeFlash,          0, 0 },
+	{ "T_Glow                ", (actionf_p1)T_Glow,                 0, 0 },
+	{ "T_LightFade           ", (actionf_p1)T_LightFade,            0, 0 },
+	{ "T_LaserFlash          ", (actionf_p1)T_LaserFlash,           0, 0 },
+	{ "T_Disappear           ", (actionf_p1)T_Disappear,            0, 0 },
+	{ "T_PolyObjRotate       ", (actionf_p1)T_PolyObjRotate,        0, 0 },
+	{ "T_PolyObjMove         ", (actionf_p1)T_PolyObjMove,          0, 0 },
+	{ "T_PolyObjWaypoint     ", (actionf_p1)T_PolyObjWaypoint,      0, 0 },
+	{ "T_PolyObjDisplace     ", (actionf_p1)T_PolyObjDisplace,      0, 0 },
+	{ "T_PolyObjFlag         ", (actionf_p1)T_PolyObjFlag,          0, 0 },
+	{ "P_RemoveThinkerDelayed", (actionf_p1)P_RemoveThinkerDelayed, 0, 0 },
+};
+#define NUM_THINKER_BUCKETS (sizeof(thinker_buckets) / sizeof(thinker_buckets[0]))
+
+static u64 thinker_other_acc = 0;
+static u32 thinker_other_calls = 0;
+static u64 thinker_window_start = 0;
+static u32 thinker_window_tics = 0;
+boolean thinker_prof_enabled = true;
+static boolean thinker_prof_started = false;
+
+// Per-mobj-type sub-profiler. P_MobjThinker is the dominant bucket in
+// thinker_buckets; this drills one level deeper to see which mobj->type
+// values eat the time. Sized to NUMMOBJTYPES (~700 entries, ~8KB total).
+static u64 mobjtype_acc[NUMMOBJTYPES];
+static u32 mobjtype_calls[NUMMOBJTYPES];
+
+unsigned long long P_MobjProfNow(void)
+{
+	return svcGetSystemTick();
+}
+
+void P_MobjProfHit(INT32 type, unsigned long long dt_ticks)
+{
+	if ((unsigned)type >= NUMMOBJTYPES)
+		return;
+	mobjtype_acc[type] += dt_ticks;
+	mobjtype_calls[type]++;
+}
+
+// Player position cache used by P_MobjThinker's distance gate.
+INT32 mp_active_count;
+fixed_t mp_active_x[MAXPLAYERS];
+fixed_t mp_active_y[MAXPLAYERS];
+
+static void P_RefreshPlayerCache(void)
+{
+	INT32 i;
+	mp_active_count = 0;
+	for (i = 0; i < MAXPLAYERS; i++)
+	{
+		if (!playeringame[i] || !players[i].mo)
+			continue;
+		mp_active_x[mp_active_count] = players[i].mo->x;
+		mp_active_y[mp_active_count] = players[i].mo->y;
+		mp_active_count++;
+	}
+}
+
+static void P_ResetThinkerProfile(u64 now)
+{
+	size_t i;
+	for (i = 0; i < NUM_THINKER_BUCKETS; i++)
+	{
+		thinker_buckets[i].acc_ticks = 0;
+		thinker_buckets[i].calls = 0;
+	}
+	thinker_other_acc = 0;
+	thinker_other_calls = 0;
+	thinker_window_tics = 0;
+	thinker_window_start = now;
+	memset(mobjtype_acc, 0, sizeof(mobjtype_acc));
+	memset(mobjtype_calls, 0, sizeof(mobjtype_calls));
+}
+
+#define MOBJTYPE_TOPN 12
+static void P_PrintMobjTypeTop(u32 tics)
+{
+	INT32 top[MOBJTYPE_TOPN];
+	int n = 0;
+	INT32 i;
+	int j;
+	(void)tics;
+	for (i = 0; i < (INT32)NUMMOBJTYPES; i++)
+	{
+		if (mobjtype_calls[i] == 0)
+			continue;
+		// Insertion into a small descending-by-acc_ticks top list.
+		for (j = 0; j < n; j++)
+		{
+			if (mobjtype_acc[i] > mobjtype_acc[top[j]])
+				break;
+		}
+		if (j < MOBJTYPE_TOPN)
+		{
+			int k;
+			int end = (n < MOBJTYPE_TOPN) ? n : MOBJTYPE_TOPN - 1;
+			for (k = end; k > j; k--)
+				top[k] = top[k-1];
+			top[j] = i;
+			if (n < MOBJTYPE_TOPN) n++;
+		}
+	}
+	if (n == 0)
+		return;
+	CONS_Printf("--- top mobj types by time ---\n");
+	for (j = 0; j < n; j++)
+	{
+		INT32 t = top[j];
+		u64 ms_x100 = mobjtype_acc[t] * 100000ULL / TPROF_TICKS_PER_SEC;
+		CONS_Printf("  MT %3d : %3u.%02u ms  (%u/tic)\n",
+			(int)t,
+			(unsigned)(ms_x100 / 100), (unsigned)(ms_x100 % 100),
+			(unsigned)(mobjtype_calls[t] / (tics ? tics : 1)));
+	}
+}
+
+static void P_PrintThinkerProfile(void)
+{
+	size_t i;
+	u32 tics = thinker_window_tics ? thinker_window_tics : 1;
+	CONS_Printf("--- thinkertimes (%u tics) ---\n", (unsigned)thinker_window_tics);
+	for (i = 0; i < NUM_THINKER_BUCKETS; i++)
+	{
+		u64 ms_x100;
+		if (thinker_buckets[i].calls == 0)
+			continue;
+		ms_x100 = thinker_buckets[i].acc_ticks * 100000ULL / TPROF_TICKS_PER_SEC;
+		CONS_Printf("%s : %3u.%02u ms  (%u/tic)\n",
+			thinker_buckets[i].name,
+			(unsigned)(ms_x100 / 100), (unsigned)(ms_x100 % 100),
+			(unsigned)(thinker_buckets[i].calls / tics));
+	}
+	if (thinker_other_calls)
+	{
+		u64 ms_x100 = thinker_other_acc * 100000ULL / TPROF_TICKS_PER_SEC;
+		CONS_Printf("other                  : %3u.%02u ms  (%u/tic)\n",
+			(unsigned)(ms_x100 / 100), (unsigned)(ms_x100 % 100),
+			(unsigned)(thinker_other_calls / tics));
+	}
+	P_PrintMobjTypeTop(tics);
+}
+
+static inline thinker_bucket_t *P_FindThinkerBucket(actionf_p1 fn)
+{
+	size_t i;
+	for (i = 0; i < NUM_THINKER_BUCKETS; i++)
+	{
+		if (thinker_buckets[i].fn == fn)
+			return &thinker_buckets[i];
+	}
+	return NULL;
+}
+
+static void P_RunThinkersProfiled(void)
+{
+	u64 now;
+
+	if (!thinker_prof_started)
+	{
+		P_ResetThinkerProfile(svcGetSystemTick());
+		thinker_prof_started = true;
+	}
+
+	for (currentthinker = thinkercap.next; currentthinker != &thinkercap; currentthinker = currentthinker->next)
+	{
+		actionf_p1 fn = currentthinker->function.acp1;
+		if (fn)
+		{
+			thinker_bucket_t *bucket;
+			u64 t0 = svcGetSystemTick();
+			fn(currentthinker);
+			{
+				u64 dt = svcGetSystemTick() - t0;
+				bucket = P_FindThinkerBucket(fn);
+				if (bucket)
+				{
+					bucket->acc_ticks += dt;
+					bucket->calls++;
+				}
+				else
+				{
+					thinker_other_acc += dt;
+					thinker_other_calls++;
+				}
+			}
+		}
+	}
+
+	thinker_window_tics++;
+	now = svcGetSystemTick();
+	if (now - thinker_window_start >= TPROF_TICKS_PER_SEC)
+	{
+		P_PrintThinkerProfile();
+		P_ResetThinkerProfile(now);
+	}
+}
+
+void Command_Thinkertimes_f(void)
+{
+	thinker_prof_enabled = !thinker_prof_enabled;
+	if (thinker_prof_enabled)
+	{
+		P_ResetThinkerProfile(svcGetSystemTick());
+		CONS_Printf("Thinker profiling: ON (printing once/sec)\n");
+	}
+	else
+	{
+		CONS_Printf("Thinker profiling: OFF\n");
+	}
+}
+#endif // __3DS__
+
 //
 // P_RunThinkers
 //
@@ -296,6 +548,14 @@ if ((*mop = targ) != NULL) // Set new target and if non-NULL, increase its count
 //
 static inline void P_RunThinkers(void)
 {
+#ifdef __3DS__
+	P_RefreshPlayerCache();
+	if (thinker_prof_enabled)
+	{
+		P_RunThinkersProfiled();
+		return;
+	}
+#endif
 	for (currentthinker = thinkercap.next; currentthinker != &thinkercap; currentthinker = currentthinker->next)
 	{
 		if (currentthinker->function.acp1)

@@ -22,7 +22,6 @@ Based on upstream SRB2 [v2.1.25](https://git.do.srb2.org/STJr/SRB2/-/tags/SRB2_r
 * No support for MIDI music
 * No netplay
 * Lower screen isn't really used
-* CEZ2 is extremely laggy
 
 ## Thanks
 Thanks to fincs, WinterMute, Monster Iestyn, Sryder, AlamTaz, Steel Titanium for help with development.

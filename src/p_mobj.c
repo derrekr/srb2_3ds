@@ -6174,7 +6174,7 @@ static void P_KoopaThinker(mobj_t *koopa)
 //
 // P_MobjThinker
 //
-void P_MobjThinker(mobj_t *mobj)
+static void P_MobjThinker_Inner(mobj_t *mobj)
 {
 	I_Assert(mobj != NULL);
 	I_Assert(!P_MobjWasRemoved(mobj));
@@ -6187,6 +6187,137 @@ void P_MobjThinker(mobj_t *mobj)
 		P_SetTarget(&mobj->target, NULL);
 	if (mobj->tracer && P_MobjWasRemoved(mobj->tracer))
 		P_SetTarget(&mobj->tracer, NULL);
+
+#ifdef __3DS__
+	// 3DS perf: short-circuit P_MobjThinker for stationary scenery. CEZ2
+	// has hundreds of these — chain links, flames, spike balls — and the
+	// full pipeline (sector specials, scale interp, P_ZMovement,
+	// P_CheckPosition, type switch, ...) is wasted work for them.
+	switch (mobj->type)
+	{
+	case MT_SMALLMACECHAIN:
+	case MT_BIGMACECHAIN:
+	case MT_CHAIN:
+		if (!(mobj->flags & MF_AMBUSH))
+		{
+			// 1-tic self-loop calling A_MaceRotate; bypass the state machine
+			// entirely (mobj->tics doesn't matter when the state never
+			// transitions).
+			A_MaceRotate(mobj);
+			return;
+		}
+		break;
+	case MT_FLAME:
+	case MT_SPECIALSPIKEBALL:
+		{
+			// Fixed-position scenery animation. Skip everything except the
+			// state cycle, and skip even that when no player is nearby —
+			// off-screen flicker / spinning is invisible.
+			INT32 i;
+			for (i = 0; i < MAXPLAYERS; i++)
+			{
+				INT32 adx, ady;
+				if (!playeringame[i] || !players[i].mo)
+					continue;
+				adx = (INT32)((mobj->x - players[i].mo->x) >> FRACBITS);
+				ady = (INT32)((mobj->y - players[i].mo->y) >> FRACBITS);
+				if (adx < 0) adx = -adx;
+				if (ady < 0) ady = -ady;
+				if (adx < 2500 && ady < 2500)
+				{
+					P_CycleMobjState(mobj);
+					break;
+				}
+			}
+			return;
+		}
+	case MT_RING:
+	case MT_REDTEAMRING:
+	case MT_BLUETEAMRING:
+	case MT_BLUEBALL:
+		// Stationary collectibles use S_RING (tics=-1, FF_ANIMATE) — the
+		// renderer handles animation, the state machine has nothing to do,
+		// and they have no physics. Player collection still works because
+		// it's driven by the player's blockmap query, not the ring's thinker.
+		// Only fast-path if truly settled (no momentum, perpetual state).
+		if (mobj->momx == 0 && mobj->momy == 0 && mobj->momz == 0
+			&& mobj->tics == -1)
+			return;
+		break;
+	case MT_SPIKE:
+		// Spikes (both static and pop-up) are stationary, MF_NOBLOCKMAP,
+		// MF_NOGRAVITY. P_ZMovement and P_CheckPosition do nothing useful
+		// for them. Inline the bits of P_MobjThinker that DO matter (fuse
+		// countdown for retract timer, state cycle for animation frames)
+		// and skip the rest. Death-state spikes have momentum from being
+		// busted; fall through to the normal path for those.
+		if (mobj->momx == 0 && mobj->momy == 0 && mobj->momz == 0)
+		{
+			if (mobj->fuse)
+			{
+				mobj->fuse--;
+				if (!mobj->fuse)
+				{
+					P_SetMobjState(mobj, mobj->state->nextstate);
+					if (P_MobjWasRemoved(mobj))
+						return;
+					mobj->fuse = mobj->info->speed;
+					if (mobj->spawnpoint)
+						mobj->fuse += mobj->spawnpoint->angle;
+				}
+			}
+			if (mobj->tics != -1)
+			{
+				mobj->tics--;
+				if (mobj->tics == 0)
+				{
+					if (!P_SetMobjState(mobj, mobj->state->nextstate))
+						return;
+				}
+			}
+			return;
+		}
+		break;
+	default:
+		break;
+	}
+
+	// Global distance gate: any mobj that isn't a player, boss, or in motion
+	// stops thinking when no player is within 4000 units. Enemies "freeze"
+	// when off-screen — fine for an arcade platformer where you can't engage
+	// what you can't see. Saves the per-mobj P_ZMovement / P_CheckPosition /
+	// sector-special / scale work that otherwise runs every tic for every
+	// mobj in the level.
+	//
+	// Fuse normally excludes a mobj (timed effects need the countdown), but
+	// MF_SCENERY is allowed through even with an active fuse — DSZ1 spikes
+	// are MF_SCENERY with a permanent retract-timer fuse, and freezing the
+	// retract animation on far spikes is invisible.
+	if (!mobj->player
+		&& !(mobj->flags & MF_BOSS)
+		&& mobj->momx == 0 && mobj->momy == 0 && mobj->momz == 0
+		&& (mobj->fuse == 0
+			|| (mobj->flags & MF_SCENERY)
+			|| mobj->type == MT_SPIKE))      // pop-up spikes have fuse + lose MF_SCENERY at spawn
+	{
+		boolean any_within = false;
+		INT32 i;
+		for (i = 0; i < mp_active_count; i++)
+		{
+			INT32 adx = (INT32)((mobj->x - mp_active_x[i]) >> FRACBITS);
+			INT32 ady = (INT32)((mobj->y - mp_active_y[i]) >> FRACBITS);
+			if (adx < 0) adx = -adx;
+			if (ady < 0) ady = -ady;
+			if (adx < 4000 && ady < 4000)
+			{
+				any_within = true;
+				break;
+			}
+		}
+		if (!any_within)
+			return;
+	}
+#endif
 
 	mobj->flags2 &= ~MF2_PUSHED;
 	mobj->eflags &= ~MFE_SPRUNG;
@@ -7479,6 +7610,21 @@ for (i = ((mobj->flags2 & MF2_STRONGBOX) ? strongboxamt : weakboxamt); i; --i) s
 		default:
 			break;
 	}
+}
+
+void P_MobjThinker(mobj_t *mobj)
+{
+#ifdef __3DS__
+	if (thinker_prof_enabled)
+	{
+		unsigned long long t0 = P_MobjProfNow();
+		INT32 type = mobj->type; // capture before _Inner can invalidate
+		P_MobjThinker_Inner(mobj);
+		P_MobjProfHit(type, P_MobjProfNow() - t0);
+		return;
+	}
+#endif
+	P_MobjThinker_Inner(mobj);
 }
 
 // Quick, optimized function for the Rail Rings

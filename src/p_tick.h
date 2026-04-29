@@ -23,6 +23,17 @@ extern tic_t leveltime;
 // Called by G_Ticker. Carries out all thinking of enemies and players.
 void Command_Numthinkers_f(void);
 void Command_CountMobjs_f(void);
+#ifdef __3DS__
+void Command_Thinkertimes_f(void);
+extern boolean thinker_prof_enabled;
+unsigned long long P_MobjProfNow(void);
+void P_MobjProfHit(INT32 type, unsigned long long dt_ticks);
+// Player-position cache, refreshed once per tic in P_RunThinkers.
+// Used by P_MobjThinker's global distance gate to skip far-away mobjs.
+extern INT32 mp_active_count;
+extern fixed_t mp_active_x[]; // sized MAXPLAYERS
+extern fixed_t mp_active_y[];
+#endif
 
 void P_Ticker(boolean run);
 void P_PreTicker(INT32 frames);

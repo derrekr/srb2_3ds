@@ -4959,11 +4959,90 @@ void A_SlingAppear(mobj_t *actor)
 // movedir - current angle holder
 // extravalue1 - smoothly move link into place
 //
+#ifdef __3DS__
+// 3DS perf: combined-rotation cache for A_MaceRotate.
+// Rotating chain links of the same macepoint share R_x*R_z; compute once per
+// macepoint per tic and reuse for every link. Swinging chains have a per-link
+// X angle so they can't share — only rotating uses this path.
+static mobj_t *macerot_cache_target = NULL;
+static tic_t macerot_cache_leveltime = 0;
+static TMatrix macerot_cache_mtx;
+
+static void P_MaceMatMul4(TMatrix dst, const TMatrix a, const TMatrix b)
+{
+	int i, j;
+	for (i = 0; i < 4; i++)
+	{
+		for (j = 0; j < 4; j++)
+		{
+			dst[i][j] = FixedMul(a[i][0], b[0][j])
+			          + FixedMul(a[i][1], b[1][j])
+			          + FixedMul(a[i][2], b[2][j])
+			          + FixedMul(a[i][3], b[3][j]);
+		}
+	}
+}
+
+// Take a decorative chain link out of the blockmap, once. Decorative chains
+// (without MF_AMBUSH — i.e. not the grabbable kind) have no collision purpose,
+// so they don't need to be in the blockmap.
+static void P_MaceChainStripBlockmap(mobj_t *thing)
+{
+	if (!(thing->flags & MF_NOBLOCKMAP))
+	{
+		mobj_t **bprev = thing->bprev;
+		if (bprev)
+		{
+			mobj_t *bnext = thing->bnext;
+			if ((*bprev = bnext) != NULL)
+				bnext->bprev = bprev;
+		}
+		thing->bnext = NULL;
+		thing->bprev = NULL;
+		thing->flags |= MF_NOBLOCKMAP;
+	}
+}
+
+// Stripped-down P_SetThingPosition for decorative chain links. Updates
+// subsector + sector thinglist (renderer needs both). Skips blockmap (chain
+// is no longer in it) and touching_sectorlist (P_CreateSecNodeList — the
+// expensive sector-special bookkeeping that chains never use).
+static void P_MaceChainSetPosition(mobj_t *thing)
+{
+	subsector_t *newss = R_PointInSubsector(thing->x, thing->y);
+	if (thing->subsector == newss)
+		return; // sector unchanged, thinglist link still valid
+
+	// Unlink from old sector thinglist
+	{
+		mobj_t **sprev = thing->sprev;
+		mobj_t *snext = thing->snext;
+		if ((*sprev = snext) != NULL)
+			snext->sprev = sprev;
+	}
+
+	thing->subsector = newss;
+
+	// Link into new sector thinglist
+	{
+		mobj_t **link = &newss->sector->thinglist;
+		mobj_t *snext = *link;
+		if ((thing->snext = snext) != NULL)
+			snext->sprev = &thing->snext;
+		thing->sprev = link;
+		*link = thing;
+	}
+}
+#endif
+
 void A_MaceRotate(mobj_t *actor)
 {
 	TVector v;
 	TVector *res;
 	fixed_t radius;
+#ifdef __3DS__
+	boolean is_decorative_chain;
+#endif
 #ifdef HAVE_BLUA
 	if (LUA_CallAction("A_MaceRotate", actor))
 		return;
@@ -4976,7 +5055,48 @@ void A_MaceRotate(mobj_t *actor)
 		return;
 	}
 
+#ifdef __3DS__
+	// 3DS perf:
+	// - Decorative chain links (no MF_AMBUSH) skip blockmap and
+	//   touching_sectorlist updates entirely — they have no collision and
+	//   no sector-special interactions. Saves the dominant per-call cost.
+	// - Distance gate: if every player is far from this macepoint, freeze
+	//   the whole mace (chain or head).
+	is_decorative_chain =
+		(actor->type == MT_SMALLMACECHAIN
+		|| actor->type == MT_BIGMACECHAIN
+		|| actor->type == MT_CHAIN)
+		&& !(actor->flags & MF_AMBUSH);
+
+	{
+		boolean any_within = false;
+		INT32 i;
+		for (i = 0; i < MAXPLAYERS; i++)
+		{
+			INT32 adx, ady;
+			if (!playeringame[i] || !players[i].mo)
+				continue;
+			adx = (INT32)((actor->target->x - players[i].mo->x) >> FRACBITS);
+			ady = (INT32)((actor->target->y - players[i].mo->y) >> FRACBITS);
+			if (adx < 0) adx = -adx;
+			if (ady < 0) ady = -ady;
+			if (adx < 2500 && ady < 2500)
+			{
+				any_within = true;
+				break;
+			}
+		}
+		if (!any_within)
+			return;
+	}
+
+	if (is_decorative_chain)
+		P_MaceChainStripBlockmap(actor); // one-time setup, no-op afterwards
+	else
+		P_UnsetThingPosition(actor);
+#else
 	P_UnsetThingPosition(actor);
+#endif
 
 	// Radius of the link's rotation.
 	radius = FixedMul(actor->info->speed * actor->reactiontime, actor->target->scale);
@@ -5045,11 +5165,26 @@ void A_MaceRotate(mobj_t *actor)
 		v[2] = FixedMul(FINESINE(fa), radius);
 		v[3] = FRACUNIT;
 
+#ifdef __3DS__
+		// All rotating chain links of one macepoint share the same R_x*R_z;
+		// cache it per macepoint per tic so the per-link work is one matmul.
+		if (macerot_cache_target != actor->target || macerot_cache_leveltime != leveltime)
+		{
+			TMatrix rx;
+			M_Memcpy(&rx, RotateXMatrix(actor->target->threshold << ANGLETOFINESHIFT), sizeof(TMatrix));
+			P_MaceMatMul4(macerot_cache_mtx, rx, *RotateZMatrix(actor->target->health << ANGLETOFINESHIFT));
+			macerot_cache_target = actor->target;
+			macerot_cache_leveltime = leveltime;
+		}
+		res = VectorMatrixMultiply(v, macerot_cache_mtx);
+		M_Memcpy(&v, res, sizeof(v));
+#else
 		// Calculate the angle matrixes for the link.
 		res = VectorMatrixMultiply(v, *RotateXMatrix(actor->target->threshold << ANGLETOFINESHIFT));
 		M_Memcpy(&v, res, sizeof(v));
 		res = VectorMatrixMultiply(v, *RotateZMatrix(actor->target->health << ANGLETOFINESHIFT));
 		M_Memcpy(&v, res, sizeof(v));
+#endif
 	}
 
 	// Add on the appropriate distances to the actor's co-ordinates.
@@ -5057,7 +5192,14 @@ void A_MaceRotate(mobj_t *actor)
 	actor->y += v[1];
 	actor->z += v[2];
 
+#ifdef __3DS__
+	if (is_decorative_chain)
+		P_MaceChainSetPosition(actor); // light: subsector + thinglist only
+	else
+		P_SetThingPosition(actor);
+#else
 	P_SetThingPosition(actor);
+#endif
 
 	if (!(actor->target->flags2 & MF2_BOSSNOTRAP) // flag that makes maces shut up on request
 	&& !(leveltime & 63) && (actor->type == MT_BIGMACE || actor->type == MT_SMALLMACE) && actor->target->type == MT_MACEPOINT)
