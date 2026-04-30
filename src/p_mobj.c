@@ -6235,14 +6235,29 @@ static void P_MobjThinker_Inner(mobj_t *mobj)
 	case MT_REDTEAMRING:
 	case MT_BLUETEAMRING:
 	case MT_BLUEBALL:
-		// Stationary collectibles use S_RING (tics=-1, FF_ANIMATE) — the
-		// renderer handles animation, the state machine has nothing to do,
-		// and they have no physics. Player collection still works because
-		// it's driven by the player's blockmap query, not the ring's thinker.
-		// Only fast-path if truly settled (no momentum, perpetual state).
+		// Stationary collectibles spin via FF_ANIMATE — that's driven by
+		// P_CycleStateAnimation inside P_CycleMobjState, so we still need
+		// to call it. Only call it when a player is close enough to see;
+		// far rings freeze on a single frame, which is invisible.
+		// Skip the rest of the pipeline (no physics, no sector specials).
 		if (mobj->momx == 0 && mobj->momy == 0 && mobj->momz == 0
 			&& mobj->tics == -1)
+		{
+			INT32 i;
+			for (i = 0; i < mp_active_count; i++)
+			{
+				INT32 adx = (INT32)((mobj->x - mp_active_x[i]) >> FRACBITS);
+				INT32 ady = (INT32)((mobj->y - mp_active_y[i]) >> FRACBITS);
+				if (adx < 0) adx = -adx;
+				if (ady < 0) ady = -ady;
+				if (adx < 2500 && ady < 2500)
+				{
+					P_CycleMobjState(mobj);
+					break;
+				}
+			}
 			return;
+		}
 		break;
 	case MT_SPIKE:
 		// Spikes (both static and pop-up) are stationary, MF_NOBLOCKMAP,
