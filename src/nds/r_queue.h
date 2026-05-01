@@ -100,6 +100,7 @@ enum {
 
 bool queueInit();
 queuePacket *queueAllocPacket();
+queuePacket *queueAllocPacketSafe();
 bool queueWaitForEvent(int mode, s64 nanoseconds);
 void queueEnqueuePacket(queuePacket *packet);
 bool queuePollForDequeue();

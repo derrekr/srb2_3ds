@@ -1158,14 +1158,52 @@ void I_FinishUpdate(void)
 	u32 numDone = queueGetFrameProgress();
 	u32 diff = frameCounter - numDone;
 
+	// GPU/worker-thread backpressure profiler. If `wait` fires often, the
+	// main thread is filling the queue faster than the worker can drain it
+	// — i.e. the bottleneck is GPU or the worker's dispatch, and CPU-side
+	// optimization on the main thread won't help. If `wait` is rare and
+	// `diff` stays at 1, the main thread is the bottleneck (CPU).
+	#define GPUWAIT_TICKS_PER_SEC 268111856ULL
+	static u32 gpuwait_frames = 0;
+	static u32 gpuwait_throttled = 0;   // # frames we hit diff>1
+	static u32 gpuwait_max_diff = 0;    // worst diff seen this window
+	static u64 gpuwait_ticks = 0;       // total ticks spent in throttle wait
+	static u64 gpuwait_window_start = 0;
+
+	gpuwait_frames++;
+	if (diff > gpuwait_max_diff) gpuwait_max_diff = diff;
 
 	if (diff > 1)
 	{
+		u64 t0 = svcGetSystemTick();
+		gpuwait_throttled++;
 		while (diff > 1)
 		{
 			//printf("throttle...%i\n", diff);
 			queueWaitForFrameProgress(numDone);
 			diff = frameCounter - queueGetFrameProgress();
+		}
+		gpuwait_ticks += svcGetSystemTick() - t0;
+	}
+
+	{
+		u64 now = svcGetSystemTick();
+		if (gpuwait_window_start == 0)
+			gpuwait_window_start = now;
+		else if (now - gpuwait_window_start >= GPUWAIT_TICKS_PER_SEC)
+		{
+			u64 ms_x100 = gpuwait_ticks * 100000ULL / GPUWAIT_TICKS_PER_SEC;
+			// \x1b[28;1H = bottom-screen console row 28, \x1b[K clears
+			// to end-of-line so a shorter line doesn't leave residue.
+			printf("\x1b[28;1Hgpuwait: %u/%u f throttled, max-diff:%u, total:%u.%02ums\x1b[K\n",
+				(unsigned)gpuwait_throttled, (unsigned)gpuwait_frames,
+				(unsigned)gpuwait_max_diff,
+				(unsigned)(ms_x100 / 100), (unsigned)(ms_x100 % 100));
+			gpuwait_frames = 0;
+			gpuwait_throttled = 0;
+			gpuwait_max_diff = 0;
+			gpuwait_ticks = 0;
+			gpuwait_window_start = now;
 		}
 	}
 	

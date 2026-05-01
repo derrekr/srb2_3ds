@@ -698,43 +698,50 @@ static void HWR_RenderPlane(sector_t *sector, extrasubsector_t *xsub, boolean is
 		}
 	}
 
+	// Hoist cos/sin out of the rotation work — both the scroll/ref rotation
+	// below and the per-vertex rotation in the inner loop read the same
+	// (angle), so a single pair of table loads suffices.
+	fixed_t cosa = 0, sina = 0;
 	if (angle) // Only needs to be done if there's an altered angle
 	{
+		cosa = FINECOSINE(angle);
+		sina = FINESINE(angle);
 
 		// This needs to be done so that it scrolls in a different direction after rotation like software
 		tempxsow = FLOAT_TO_FIXED(scrollx);
 		tempytow = FLOAT_TO_FIXED(scrolly);
-		scrollx = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));
-		scrolly = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINESINE(angle)) + FixedMul(tempytow, FINECOSINE(angle))));
+		scrollx = FIXED_TO_FLOAT(FixedMul(tempxsow, cosa) - FixedMul(tempytow, sina));
+		scrolly = FIXED_TO_FLOAT(FixedMul(tempxsow, sina) + FixedMul(tempytow, cosa));
 
 		// This needs to be done so everything aligns after rotation
 		// It would be done so that rotation is done, THEN the translation, but I couldn't get it to rotate AND scroll like software does
 		tempxsow = FLOAT_TO_FIXED(flatxref);
 		tempytow = FLOAT_TO_FIXED(flatyref);
-		flatxref = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));
-		flatyref = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINESINE(angle)) + FixedMul(tempytow, FINECOSINE(angle))));
+		flatxref = FIXED_TO_FLOAT(FixedMul(tempxsow, cosa) - FixedMul(tempytow, sina));
+		flatyref = FIXED_TO_FLOAT(FixedMul(tempxsow, sina) + FixedMul(tempytow, cosa));
 	}
+
+	// fflatsize is one of {32,64,128,256,512,1024,2048} — all powers of two,
+	// so 1.0f/fflatsize is exact in IEEE 754 (no precision loss). Replaces
+	// the per-vertex VFP divide (~20 cycles on ARM11) with a multiply (~1).
+	const float inv_fflatsize = 1.0f / fflatsize;
+	const float tex_offset_x = scrollx - flatxref;
+	const float tex_offset_y = flatyref + scrolly;
 
 	for (i = 0; i < nrPlaneVerts; i++, (!isceiling) ? v3d-- : v3d++,pv++)
 	{
 		// Hurdler: add scrolling texture on floor/ceiling
-		v3d->sow = (float)((pv->x / fflatsize) - flatxref + scrollx);
-		v3d->tow = (float)(flatyref - (pv->y / fflatsize) + scrolly);
-
-		//v3d->sow = (float)(pv->x / fflatsize);
-		//v3d->tow = (float)(pv->y / fflatsize);
+		v3d->sow = pv->x * inv_fflatsize + tex_offset_x;
+		v3d->tow = tex_offset_y - pv->y * inv_fflatsize;
 
 		// Need to rotate before translate
 		if (angle) // Only needs to be done if there's an altered angle
 		{
 			tempxsow = FLOAT_TO_FIXED(v3d->sow);
 			tempytow = FLOAT_TO_FIXED(v3d->tow);
-			v3d->sow = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));
-			v3d->tow = (FIXED_TO_FLOAT(-FixedMul(tempxsow, FINESINE(angle)) - FixedMul(tempytow, FINECOSINE(angle))));
+			v3d->sow = FIXED_TO_FLOAT(FixedMul(tempxsow, cosa) - FixedMul(tempytow, sina));
+			v3d->tow = FIXED_TO_FLOAT(-FixedMul(tempxsow, sina) - FixedMul(tempytow, cosa));
 		}
-
-		//v3d->sow = (float)(v3d->sow - flatxref + scrollx);
-		//v3d->tow = (float)(flatyref - v3d->tow + scrolly);
 
 		v3d->x = pv->x;
 		v3d->y = height;
@@ -3298,35 +3305,48 @@ static void HWR_RenderPolyObjectPlane(polyobj_t *polysector, boolean isceiling, 
 		}
 	}
 
+	// See HWR_RenderPlane for the same hoist rationale (cos/sin once, divide
+	// turned into reciprocal-multiply).
+	fixed_t cosa = 0, sina = 0;
 	if (angle) // Only needs to be done if there's an altered angle
 	{
+		cosa = FINECOSINE(angle);
+		sina = FINESINE(angle);
+
 		// This needs to be done so that it scrolls in a different direction after rotation like software
 		tempxsow = FLOAT_TO_FIXED(scrollx);
 		tempytow = FLOAT_TO_FIXED(scrolly);
-		scrollx = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));
-		scrolly = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINESINE(angle)) + FixedMul(tempytow, FINECOSINE(angle))));
+		scrollx = FIXED_TO_FLOAT(FixedMul(tempxsow, cosa) - FixedMul(tempytow, sina));
+		scrolly = FIXED_TO_FLOAT(FixedMul(tempxsow, sina) + FixedMul(tempytow, cosa));
 
 		// This needs to be done so everything aligns after rotation
 		// It would be done so that rotation is done, THEN the translation, but I couldn't get it to rotate AND scroll like software does
 		tempxsow = FLOAT_TO_FIXED(flatxref);
 		tempytow = FLOAT_TO_FIXED(flatyref);
-		flatxref = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));
-		flatyref = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINESINE(angle)) + FixedMul(tempytow, FINECOSINE(angle))));
+		flatxref = FIXED_TO_FLOAT(FixedMul(tempxsow, cosa) - FixedMul(tempytow, sina));
+		flatyref = FIXED_TO_FLOAT(FixedMul(tempxsow, sina) + FixedMul(tempytow, cosa));
 	}
+
+	const float inv_fflatsize = 1.0f / fflatsize;
+	const float tex_offset_x = scrollx - flatxref;
+	const float tex_offset_y = flatyref + scrolly;
 
 	for (i = 0; i < (INT32)nrPlaneVerts; i++,v3d++)
 	{
+		const float ox = FIXED_TO_FLOAT(polysector->origVerts[i].x);
+		const float oy = FIXED_TO_FLOAT(polysector->origVerts[i].y);
+
 		// Hurdler: add scrolling texture on floor/ceiling
-		v3d->sow = (float)((FIXED_TO_FLOAT(polysector->origVerts[i].x) / fflatsize) - flatxref + scrollx); // Go from the polysector's original vertex locations
-		v3d->tow = (float)(flatyref - (FIXED_TO_FLOAT(polysector->origVerts[i].y) / fflatsize) + scrolly); // Means the flat is offset based on the original vertex locations
+		v3d->sow = ox * inv_fflatsize + tex_offset_x; // Go from the polysector's original vertex locations
+		v3d->tow = tex_offset_y - oy * inv_fflatsize; // Means the flat is offset based on the original vertex locations
 
 		// Need to rotate before translate
 		if (angle) // Only needs to be done if there's an altered angle
 		{
 			tempxsow = FLOAT_TO_FIXED(v3d->sow);
 			tempytow = FLOAT_TO_FIXED(v3d->tow);
-			v3d->sow = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));
-			v3d->tow = (FIXED_TO_FLOAT(-FixedMul(tempxsow, FINESINE(angle)) - FixedMul(tempytow, FINECOSINE(angle))));
+			v3d->sow = FIXED_TO_FLOAT(FixedMul(tempxsow, cosa) - FixedMul(tempytow, sina));
+			v3d->tow = FIXED_TO_FLOAT(-FixedMul(tempxsow, sina) - FixedMul(tempytow, cosa));
 		}
 
 		v3d->x = FIXED_TO_FLOAT(polysector->vertices[i]->x);
@@ -5083,8 +5103,17 @@ static void HWR_CreateDrawNodes(void)
     NDS3D_ResetRenderStatsMeasureBegin(6);
 
 	HWD.pfnSetTransform(&atransform);
-	
+
     // Okay! Let's draw it all! Woo!
+
+    // planeinfo / polyplaneinfo / wallinfo are appended in BSP-walk order, so
+    // adjacent entries frequently share a flat (large floors split across
+    // sectors) or a wall texture (long corridors). HWR_GetFlat /
+    // HWR_GetTexture both end with HWD.pfnSetTexture — re-binding the same
+    // texture is wasted work. A single-slot last-result cache skips the
+    // call when the lump/tex matches the previous entry.
+    lumpnum_t last_flat = LUMPERROR;
+    INT32 last_tex = -1;
 
     for (i = 0; i < numplanes; i++)
     {
@@ -5093,8 +5122,11 @@ static void HWR_CreateDrawNodes(void)
         // We aren't traversing the BSP tree, so make gr_frontsector null to avoid crashes.
         gr_frontsector = NULL;
 
-        if (!(plane->blend & PF_NoTexture))
+        if (!(plane->blend & PF_NoTexture) && plane->lumpnum != last_flat)
+        {
             HWR_GetFlat(plane->lumpnum);
+            last_flat = plane->lumpnum;
+        }
         HWR_RenderPlane(NULL, plane->xsub, plane->isceiling, plane->fixedheight, plane->blend, plane->lightlevel,
             plane->lumpnum, plane->FOFSector, plane->alpha, plane->fogplane, plane->planecolormap);
     }
@@ -5106,8 +5138,11 @@ static void HWR_CreateDrawNodes(void)
         // We aren't traversing the BSP tree, so make gr_frontsector null to avoid crashes.
         gr_frontsector = NULL;
 
-        if (!(polyplane->blend & PF_NoTexture))
+        if (!(polyplane->blend & PF_NoTexture) && polyplane->lumpnum != last_flat)
+        {
             HWR_GetFlat(polyplane->lumpnum);
+            last_flat = polyplane->lumpnum;
+        }
         HWR_RenderPolyObjectPlane(polyplane->polysector, polyplane->isceiling, polyplane->fixedheight, polyplane->blend, polyplane->lightlevel,
             polyplane->lumpnum, polyplane->FOFSector, polyplane->alpha, polyplane->planecolormap);
     }
@@ -5116,8 +5151,11 @@ static void HWR_CreateDrawNodes(void)
     {
         wallinfo_t *wall = &wallinfo[i];
 
-        if (!(wall->blend & PF_NoTexture))
+        if (!(wall->blend & PF_NoTexture) && wall->texnum != last_tex)
+        {
             HWR_GetTexture(wall->texnum);
+            last_tex = wall->texnum;
+        }
         HWR_RenderWall(wall->wallVerts, &wall->Surf, wall->blend, wall->fogwall,wall->lightlevel, wall->wallcolormap);
     }
 
