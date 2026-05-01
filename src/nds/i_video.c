@@ -81,6 +81,13 @@ static void RTFormat_OnChange(void);
 consvar_t cv_3dsrtformat = {"gr_3dsrtformat", "RGBA8",
 	CV_SAVE | CV_CALL, rtformat_cons_t, RTFormat_OnChange, 0, NULL, NULL, 0, 0, NULL};
 
+// Precache the level's textures at load time so first-use stalls don't hit
+// during gameplay. Read by HWR_PrecacheLevel(). The precache itself watches
+// linearSpaceFree() and stops once free heap drops below a safety margin so
+// runtime allocations (HUD, color-translated sprites, etc.) still fit.
+consvar_t cv_3dsprecache = {"gr_3dsprecache", "On",
+	CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+
 static void BottomScreen_SetBacklight(boolean off)
 {
 	gspLcdInit();

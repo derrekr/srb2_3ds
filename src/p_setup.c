@@ -3138,6 +3138,22 @@ boolean P_SetupLevel(boolean skipprecip)
 	if (precache || dedicated)
 		R_PrecacheLevel();
 
+#ifdef HWRENDER
+	// HW renderer: pre-convert level textures so first-use stalls don't
+	// happen during gameplay. R_PrecacheLevel above bails out for non-soft
+	// renderers; this is the HW counterpart.
+	if (rendermode != render_soft && rendermode != render_none)
+	{
+#if defined(_NDS)
+		extern consvar_t cv_3dsprecache;
+		if (cv_3dsprecache.value)
+			HWR_PrecacheLevel();
+#else
+		HWR_PrecacheLevel();
+#endif
+	}
+#endif
+
 	nextmapoverride = 0;
 	skipstats = false;
 

@@ -30,6 +30,15 @@
 #include "../z_zone.h"
 #include "../v_video.h"
 #include "../r_draw.h"
+#include "../r_state.h"     // sides, sectors, sprites, numsides, numsprites
+#include "../r_sky.h"       // skytexture
+#include "../p_setup.h"     // levelflats, numlevelflats
+#include "../p_local.h"     // thinkercap, P_MobjThinker
+#include "../command.h"     // consvar_t
+
+#if defined(_NDS)
+#include <3ds.h>            // linearSpaceFree
+#endif
 
 //Hurdler: 25/04/2000: used for new colormap code in hardware mode
 //static UINT8 *gr_colormap = NULL; // by default it must be NULL ! (because colormap tables are not initialized)
@@ -623,6 +632,136 @@ void HWR_PrepLevelCache(size_t pnumtextures)
 	gr_textures = calloc(pnumtextures, sizeof (*gr_textures));
 	if (gr_textures == NULL)
 		I_Error("3D can't alloc gr_textures");
+}
+
+// Walks every texture, flat, and on-map sprite in the loaded level and forces
+// the HW renderer to upload it now, instead of lazily on first draw. This
+// removes the per-frame stall the first time the player sees new geometry.
+//
+// On 3DS we leave a chunk of linear heap free for runtime allocations so the
+// just-precached textures don't get evicted the moment something new (HUD,
+// translated sprite variant, etc.) needs to land. Once headroom is gone we
+// stop adding more and let the existing lazy path take over.
+//
+// Translated sprite variants (HWR_GetMappedPatch) are intentionally NOT
+// precached - they're per-skin/per-color combinatorial and would explode
+// the working set. They stay lazy.
+void HWR_PrecacheLevel(void)
+{
+#if defined(_NDS)
+	// Reserve headroom on the 3DS linear heap so runtime uploads don't
+	// immediately evict what we just precached.
+	const u32 PRECACHE_HEADROOM = 16 * 1024 * 1024;
+#define HEADROOM_REACHED() (linearSpaceFree() < PRECACHE_HEADROOM)
+#else
+#define HEADROOM_REACHED() (false)
+#endif
+
+	char *texturepresent, *spritepresent;
+	size_t i, j, k;
+	thinker_t *th;
+	spriteframe_t *sf;
+	size_t numTexUploaded = 0, numFlatUploaded = 0, numSpriteUploaded = 0;
+	size_t numTexSkipped = 0, numFlatSkipped = 0, numSpriteSkipped = 0;
+
+	if (rendermode == render_soft || rendermode == render_none)
+		return;
+	if (numtextures == 0)
+		return;
+
+	// --- Walls ---
+	texturepresent = calloc(numtextures, sizeof (*texturepresent));
+	if (texturepresent == NULL)
+		return; // not fatal; gameplay just falls back to lazy upload
+	for (j = 0; j < numsides; j++)
+	{
+		if (sides[j].toptexture >= 0 && sides[j].toptexture < numtextures)
+			texturepresent[sides[j].toptexture] = 1;
+		if (sides[j].midtexture >= 0 && sides[j].midtexture < numtextures)
+			texturepresent[sides[j].midtexture] = 1;
+		if (sides[j].bottomtexture >= 0 && sides[j].bottomtexture < numtextures)
+			texturepresent[sides[j].bottomtexture] = 1;
+	}
+	if (skytexture >= 0 && skytexture < numtextures)
+		texturepresent[skytexture] = 1;
+
+	for (j = 0; j < (size_t)numtextures; j++)
+	{
+		if (!texturepresent[j])
+			continue;
+		if (HEADROOM_REACHED())
+		{
+			numTexSkipped++;
+			continue;
+		}
+		HWR_GetTexture((INT32)j);
+		numTexUploaded++;
+	}
+	free(texturepresent);
+
+	// --- Flats ---
+	// levelflats[] only contains flats actually referenced by the level, so
+	// no presence bitmap is needed.
+	for (i = 0; i < numlevelflats; i++)
+	{
+		if (HEADROOM_REACHED())
+		{
+			numFlatSkipped++;
+			continue;
+		}
+		HWR_GetFlat(levelflats[i].lumpnum);
+		numFlatUploaded++;
+	}
+
+	// --- Sprites ---
+	// Walk active mobjs to find which sprite types this level actually uses.
+	if (numsprites > 0)
+	{
+		spritepresent = calloc(numsprites, sizeof (*spritepresent));
+		if (spritepresent == NULL)
+			goto done;
+		for (th = thinkercap.next; th != &thinkercap; th = th->next)
+			if (th->function.acp1 == (actionf_p1)P_MobjThinker)
+			{
+				size_t s = (size_t)((mobj_t *)th)->sprite;
+				if (s < numsprites)
+					spritepresent[s] = 1;
+			}
+
+		for (i = 0; i < numsprites; i++)
+		{
+			if (!spritepresent[i])
+				continue;
+			for (j = 0; j < sprites[i].numframes; j++)
+			{
+				sf = &sprites[i].spriteframes[j];
+				for (k = 0; k < 8; k++)
+				{
+					lumpnum_t lump = sf->lumppat[k];
+					if (lump == LUMPERROR)
+						continue;
+					if (HEADROOM_REACHED())
+					{
+						numSpriteSkipped++;
+						continue;
+					}
+					HWR_GetPatch(HWR_GetCachedGLPatch(lump));
+					numSpriteUploaded++;
+				}
+			}
+		}
+		free(spritepresent);
+	}
+
+done:
+	CONS_Printf(
+		"HWR_PrecacheLevel: uploaded %s textures (skipped %s), "
+		"%s flats (skipped %s), %s sprite patches (skipped %s)\n",
+		sizeu1(numTexUploaded), sizeu2(numTexSkipped),
+		sizeu3(numFlatUploaded), sizeu4(numFlatSkipped),
+		sizeu5(numSpriteUploaded), sizeu1(numSpriteSkipped));
+
+#undef HEADROOM_REACHED
 }
 
 void HWR_SetPalette(RGBA_t *palette)
