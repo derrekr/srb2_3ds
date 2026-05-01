@@ -443,6 +443,19 @@ typedef struct
 } disappear_t;
 
 void T_Disappear(disappear_t *d);
+#ifdef __3DS__
+// 3DS perf: register a disappear thinker into the batch array. Called by
+// Add_MasterDisappearer and LoadDisappearThinker so saved games still work.
+void P_RegisterDisappearForBatch(disappear_t *d);
+// 3DS perf: process all registered disappear thinkers in one pass. Called
+// from P_RunThinkers; the standard dispatch skips T_Disappear when batching.
+void T_DisappearBatch(void);
+// 3DS perf: reset the disappear batch state — call at level setup. The
+// array storage is PU_LEVEL (auto-freed on level change), but our static
+// counters need explicit reset because reloading the same level keeps
+// `gamemap` unchanged.
+void P_ResetDisappearBatch(void);
+#endif
 
 // Prototype functions for pushers
 void T_Pusher(pusher_t *p);

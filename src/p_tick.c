@@ -183,6 +183,9 @@ void Command_CountMobjs_f(void)
 void P_InitThinkers(void)
 {
 	thinkercap.prev = thinkercap.next = &thinkercap;
+#ifdef __3DS__
+	P_ResetDisappearBatch(); // PU_LEVEL freed our array; reset before new disappears register
+#endif
 }
 
 //
@@ -478,7 +481,7 @@ static void P_RunThinkersProfiled(void)
 	for (currentthinker = thinkercap.next; currentthinker != &thinkercap; currentthinker = currentthinker->next)
 	{
 		actionf_p1 fn = currentthinker->function.acp1;
-		if (fn)
+		if (fn && fn != (actionf_p1)T_Disappear) // batched outside this loop
 		{
 			thinker_bucket_t *bucket;
 			u64 t0 = svcGetSystemTick();
@@ -550,17 +553,44 @@ static inline void P_RunThinkers(void)
 {
 #ifdef __3DS__
 	P_RefreshPlayerCache();
+	// Process all disappear thinkers in one cache-friendly pass. Charge the
+	// time to the T_Disappear bucket so the profiler still attributes it.
+	if (thinker_prof_enabled && thinker_prof_started)
+	{
+		u64 t0 = svcGetSystemTick();
+		T_DisappearBatch();
+		{
+			u64 dt = svcGetSystemTick() - t0;
+			thinker_bucket_t *b = P_FindThinkerBucket((actionf_p1)T_Disappear);
+			if (b)
+			{
+				b->acc_ticks += dt;
+				b->calls++; // count the batch as one call/tic
+			}
+		}
+	}
+	else
+	{
+		T_DisappearBatch();
+	}
 	if (thinker_prof_enabled)
 	{
 		P_RunThinkersProfiled();
 		return;
 	}
-#endif
+	for (currentthinker = thinkercap.next; currentthinker != &thinkercap; currentthinker = currentthinker->next)
+	{
+		actionf_p1 fn = currentthinker->function.acp1;
+		if (fn && fn != (actionf_p1)T_Disappear) // batched separately above
+			fn(currentthinker);
+	}
+#else
 	for (currentthinker = thinkercap.next; currentthinker != &thinkercap; currentthinker = currentthinker->next)
 	{
 		if (currentthinker->function.acp1)
 			currentthinker->function.acp1(currentthinker);
 	}
+#endif
 }
 
 //

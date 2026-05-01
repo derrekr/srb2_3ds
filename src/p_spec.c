@@ -7044,7 +7044,142 @@ static void Add_MasterDisappearer(tic_t appeartime, tic_t disappeartime, tic_t o
 	d->timer = 1;
 
 	P_AddThinker(&d->thinker);
+#ifdef __3DS__
+	P_RegisterDisappearForBatch(d);
+#endif
 }
+
+#ifdef __3DS__
+// 3DS perf: per-affectee cache of (sector, FOF) pairs. The original walk
+// is O(sectors_with_tag * FOFs_per_sector) per fire even though FOFs that
+// don't match the master are filtered out — caching collapses it to
+// O(matching_FOFs) and skips the per-sector `moved=true` write on sectors
+// that contributed nothing. Storage is PU_LEVEL so it auto-frees on level
+// load. Lazily populated on first fire.
+typedef struct
+{
+	sector_t *sec;
+	ffloor_t *rover;
+} disappear_match_t;
+
+static disappear_match_t **disappear_cache = NULL;
+static size_t *disappear_cache_count = NULL;
+static char *disappear_cache_done = NULL;
+static size_t disappear_cache_lines = 0;
+static INT16 disappear_cache_gamemap = -1;
+
+// 3DS perf: batch dispatch for disappear thinkers. Egg Rock 1 has thousands
+// of them; the per-thinker function-call overhead alone (even on the cheap
+// `--d->timer; return;` path) was ~200 ms/sec. Storing them in a flat array
+// and iterating with a single tight loop is ~5-10x cheaper than dispatching
+// each through the global thinker list.
+//
+// The disappear_t still lives in the standard thinker list (so save/load is
+// unchanged), but P_RunThinkers (3DS only) skips T_Disappear in the main
+// dispatch loop and calls T_DisappearBatch() once per tic instead.
+//
+// Lifecycle: array is PU_LEVEL (freed on level change), state is reset
+// lazily via gamemap detection. Thinkers we register get refcount++ so
+// P_RemoveThinkerDelayed can't free them out from under us; if a thinker
+// is externally marked for removal (function != T_Disappear), the batch
+// detects this, decrements the ref, and removes the entry from the array.
+static disappear_t **disappear_arr = NULL;
+static size_t disappear_arr_count = 0;
+static size_t disappear_arr_capacity = 0;
+
+void P_ResetDisappearBatch(void)
+{
+	// PU_LEVEL freed the array (and the disappear_t entries it pointed at)
+	// so the pointer is dangling — clear it.
+	disappear_arr = NULL;
+	disappear_arr_count = 0;
+	disappear_arr_capacity = 0;
+
+	// Same level reload also invalidates the cache (FOFs got reallocated).
+	disappear_cache = NULL;
+	disappear_cache_count = NULL;
+	disappear_cache_done = NULL;
+	disappear_cache_lines = 0;
+}
+
+void P_RegisterDisappearForBatch(disappear_t *d)
+{
+	if (disappear_arr_count >= disappear_arr_capacity)
+	{
+		size_t new_cap = disappear_arr_capacity ? disappear_arr_capacity * 2 : 64;
+		disappear_t **new_arr = Z_Malloc(new_cap * sizeof(disappear_t *), PU_LEVEL, NULL);
+		if (disappear_arr_count)
+			memcpy(new_arr, disappear_arr, disappear_arr_count * sizeof(disappear_t *));
+		disappear_arr = new_arr;
+		disappear_arr_capacity = new_cap;
+	}
+	d->thinker.references++; // hold a reference until we remove from array
+	disappear_arr[disappear_arr_count++] = d;
+}
+
+void T_DisappearBatch(void)
+{
+	size_t i;
+	for (i = 0; i < disappear_arr_count; )
+	{
+		disappear_t *d = disappear_arr[i];
+		// Externally removed thinkers have function set to
+		// P_RemoveThinkerDelayed. Drop our reference and compact the array.
+		if (d->thinker.function.acp1 != (actionf_p1)T_Disappear)
+		{
+			d->thinker.references--;
+			disappear_arr[i] = disappear_arr[--disappear_arr_count];
+			continue;
+		}
+		T_Disappear(d);
+		i++;
+	}
+}
+
+static void T_DisappearEnsureCache(INT32 affectee)
+{
+	INT32 s;
+	ffloor_t *rover;
+	size_t count = 0;
+	size_t idx;
+
+	// Detect level change: gamemap differs OR numlines differs (PU_LEVEL
+	// frees the underlying memory, so we must reallocate after every load).
+	if (disappear_cache_gamemap != gamemap || disappear_cache_lines != numlines)
+	{
+		disappear_cache       = Z_Calloc(numlines * sizeof(*disappear_cache), PU_LEVEL, NULL);
+		disappear_cache_count = Z_Calloc(numlines * sizeof(*disappear_cache_count), PU_LEVEL, NULL);
+		disappear_cache_done  = Z_Calloc(numlines * sizeof(*disappear_cache_done), PU_LEVEL, NULL);
+		disappear_cache_lines = numlines;
+		disappear_cache_gamemap = gamemap;
+	}
+	if (disappear_cache_done[affectee])
+		return;
+
+	// First pass: count matches.
+	for (s = -1; (s = P_FindSectorFromLineTag(&lines[affectee], s)) >= 0; )
+		for (rover = sectors[s].ffloors; rover; rover = rover->next)
+			if (rover->master == &lines[affectee])
+				count++;
+
+	disappear_cache[affectee] = count
+		? Z_Malloc(count * sizeof(disappear_match_t), PU_LEVEL, NULL)
+		: NULL;
+	disappear_cache_count[affectee] = count;
+
+	// Second pass: populate.
+	idx = 0;
+	for (s = -1; (s = P_FindSectorFromLineTag(&lines[affectee], s)) >= 0; )
+		for (rover = sectors[s].ffloors; rover; rover = rover->next)
+			if (rover->master == &lines[affectee])
+			{
+				disappear_cache[affectee][idx].sec = &sectors[s];
+				disappear_cache[affectee][idx].rover = rover;
+				idx++;
+			}
+	disappear_cache_done[affectee] = 1;
+}
+#endif
 
 /** Makes a FOF appear/disappear
   *
@@ -7061,6 +7196,38 @@ void T_Disappear(disappear_t *d)
 
 	if (--d->timer <= 0)
 	{
+#ifdef __3DS__
+		size_t i, n;
+		disappear_match_t *m;
+
+		T_DisappearEnsureCache(d->affectee);
+		n = disappear_cache_count[d->affectee];
+		m = disappear_cache[d->affectee];
+		for (i = 0; i < n; i++)
+		{
+			sector_t *sec = m[i].sec;
+			ffloor_t *rover = m[i].rover;
+
+			if (d->exists)
+				rover->flags &= ~FF_EXISTS;
+			else
+			{
+				rover->flags |= FF_EXISTS;
+
+				if (!(lines[d->sourceline].flags & ML_NOCLIMB))
+				{
+#ifdef ESLOPE
+					if (*rover->t_slope)
+						sec->soundorg.z = P_GetZAt(*rover->t_slope, sec->soundorg.x, sec->soundorg.y);
+					else
+#endif
+					sec->soundorg.z = *rover->topheight;
+					S_StartSound(&sec->soundorg, sfx_appear);
+				}
+			}
+			sec->moved = true;
+		}
+#else
 		ffloor_t *rover;
 		register INT32 s;
 
@@ -7091,6 +7258,7 @@ void T_Disappear(disappear_t *d)
 			}
 			sectors[s].moved = true;
 		}
+#endif
 
 		if (d->exists)
 		{

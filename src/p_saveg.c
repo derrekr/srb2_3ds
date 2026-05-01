@@ -2497,6 +2497,9 @@ static inline void LoadDisappearThinker(actionf_p1 thinker)
 	ht->sourceline = READINT32(save_p);
 	ht->exists = READINT32(save_p);
 	P_AddThinker(&ht->thinker);
+#ifdef __3DS__
+	P_RegisterDisappearForBatch(ht);
+#endif
 }
 
 #ifdef POLYOBJECTS
