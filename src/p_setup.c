@@ -2166,8 +2166,16 @@ static void P_LoadReject(lumpnum_t lumpnum)
 		rejectmatrix = NULL;
 		CONS_Debug(DBG_SETUP, "P_LoadReject: REJECT lump has size 0, will not be loaded\n");
 	}
+#ifdef _NDS
+	else
+	{
+		rejectmatrix = NULL;
+		CONS_Debug(DBG_SETUP, "P_LoadReject: Skipping %s byte REJECT lump on 3DS\n", sizeu1(count));
+	}
+#else
 	else
 		rejectmatrix = W_CacheLumpNum(lumpnum, PU_LEVEL);
+#endif
 }
 
 // PK3 version
@@ -2189,8 +2197,13 @@ static void P_LoadRawReject(UINT8 *data, size_t count, const char *lumpname)
 	}
 	else
 	{
+#ifdef _NDS
+		rejectmatrix = NULL;
+		CONS_Debug(DBG_SETUP, "P_LoadRawReject: Skipping %s byte REJECT lump on 3DS\n", sizeu1(count));
+#else
 		rejectmatrix = Z_Malloc(count, PU_LEVEL, NULL); // allocate memory for the reject matrix
 		M_Memcpy(rejectmatrix, data, count); // copy the data into it
+#endif
 	}
 }
 
