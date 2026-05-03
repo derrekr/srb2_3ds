@@ -332,7 +332,7 @@ static u64 thinker_other_acc = 0;
 static u32 thinker_other_calls = 0;
 static u64 thinker_window_start = 0;
 static u32 thinker_window_tics = 0;
-boolean thinker_prof_enabled = true;
+boolean thinker_prof_enabled = false;
 static boolean thinker_prof_started = false;
 
 // Per-mobj-type sub-profiler. P_MobjThinker is the dominant bucket in

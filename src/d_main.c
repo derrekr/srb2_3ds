@@ -1163,7 +1163,7 @@ void D_SRB2Main(void)
 	//---------------------------------------------------- READY SCREEN
 	// we need to check for dedicated before initialization of some subsystems
 
-	CONS_Printf("I_StartupGraphics()...\n");
+	//CONS_Printf("I_StartupGraphics()...\n");
 	I_StartupGraphics();
 
 	//--------------------------------------------------------- CONSOLE

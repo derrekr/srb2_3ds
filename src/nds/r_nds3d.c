@@ -1208,7 +1208,7 @@ int processRenderQueue(void)
 
 void NDS3D_Thread(void)
 {
-	N3DS_Print("NDS3D_Thread started\n");
+	//N3DS_Print("NDS3D_Thread started\n");
 
 	NDS3D_Init();
 

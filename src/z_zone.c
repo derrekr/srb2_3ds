@@ -33,6 +33,10 @@
 #include "m_misc.h" // M_Memcpy
 #include "lua_script.h"
 
+#ifdef _NDS
+#include <3ds.h> // svcSleepThread
+#endif
+
 #ifdef HWRENDER
 #include "hardware/hw_main.h" // For hardware memory info
 #endif
@@ -151,6 +155,10 @@ void Z_Init(void)
 
 	// Note: This allocates memory. Watch out.
 	COM_AddCommand("memfree", Command_Memfree_f);
+
+#ifdef _NDS
+	//svcSleepThread(5000000000LL); // 5 seconds, to let the console print before we start doing things that might cause it to lag.
+#endif
 
 #ifdef ZDEBUG
 	COM_AddCommand("memdump", Command_Memdump_f);

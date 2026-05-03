@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <malloc.h>
 #include <assert.h>
 #include <3ds.h>
 #include <citro3d.h>
@@ -383,11 +384,10 @@ void NDS3DVIDEO_Stub(void)
 void workerThreadEntry(void *arg)
 {
 	s32 curCPU = svcGetProcessorID();
-	printf("workerThreadEntry cpuID: %i\n", curCPU);
-
 	s32 actualPrio = 0;
 	svcGetThreadPriority(&actualPrio, CUR_THREAD_HANDLE);
-	printf("worker thread prio: %i\n", actualPrio);
+
+	printf("workerThread cpuID %i prio %i\n", curCPU, actualPrio);
 
 	extern void NDS3D_Thread(void);
 	NDS3D_Thread();
@@ -1193,9 +1193,37 @@ void I_FinishUpdate(void)
 		else if (now - gpuwait_window_start >= GPUWAIT_TICKS_PER_SEC)
 		{
 			u64 ms_x100 = gpuwait_ticks * 100000ULL / GPUWAIT_TICKS_PER_SEC;
+
+			extern u32 __ctru_linear_heap_size;
+			extern u32 __ctru_heap_size;
+			u32 lintotal = __ctru_linear_heap_size;
+			u32 linused  = lintotal - (u32)linearSpaceFree();
+			u32 used_x100 = (u32)((u64)linused * 100ULL / (1024 * 1024));
+			u32 pct = lintotal ? (u32)((u64)linused * 100ULL / lintotal) : 0;
+			// Texture cache walks the cached entries and sums w*h*4. Approximate
+			// (assumes RGBA8) but good enough to see how much of the linear pool
+			// is textures vs everything else (citro3d cmdbuf, geometryBuf, ...).
+			u32 texbytes = (u32)getTextureMemUsed();
+			u32 tex_x100 = (u32)((u64)texbytes * 100ULL / (1024 * 1024));
+			struct mallinfo mi = mallinfo();
+			u32 mtotal = __ctru_heap_size;
+			u32 mused = (u32)mi.uordblks;
+			u32 mused_x100 = (u32)((u64)mused * 100ULL / (1024 * 1024));
+			u32 mpct = mtotal ? (u32)((u64)mused * 100ULL / mtotal) : 0;
+			printf("\x1b[26;1Hmalloc: %u.%02u/%u MiB (%u%%)\x1b[K\n",
+				(unsigned)(mused_x100 / 100), (unsigned)(mused_x100 % 100),
+				(unsigned)(mtotal / (1024 * 1024)),
+				(unsigned)mpct);
+			printf("\x1b[27;1Hlinear: %u.%02u/%u MiB (%u%%), tex %u.%02u MiB (%u)\x1b[K\n",
+				(unsigned)(used_x100 / 100), (unsigned)(used_x100 % 100),
+				(unsigned)(lintotal / (1024 * 1024)),
+				(unsigned)pct,
+				(unsigned)(tex_x100 / 100), (unsigned)(tex_x100 % 100),
+				(unsigned)texCacheGetNumCached());
+
 			// \x1b[28;1H = bottom-screen console row 28, \x1b[K clears
 			// to end-of-line so a shorter line doesn't leave residue.
-			printf("\x1b[28;1Hgpuwait: %u/%u f throttled, max-diff:%u, total:%u.%02ums\x1b[K\n",
+			printf("\x1b[28;1Hgpuwait: %u/%u f, max-diff:%u, total:%u.%02ums\x1b[K\n",
 				(unsigned)gpuwait_throttled, (unsigned)gpuwait_frames,
 				(unsigned)gpuwait_max_diff,
 				(unsigned)(ms_x100 / 100), (unsigned)(ms_x100 % 100));

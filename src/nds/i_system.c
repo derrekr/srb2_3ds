@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <malloc.h>
 //#include <3ds.h>
 //#include <citro3d.h>
 
@@ -34,9 +35,11 @@ float sliderState = 0.0f;
 
 UINT32 I_GetFreeMem(UINT32 *total)
 {
-	*total = 128 * 1024 * 1024;
-	
-	return linearSpaceFree() + vramSpaceFree();
+	extern u32 __ctru_heap_size;
+	struct mallinfo mi = mallinfo();
+
+	*total = __ctru_heap_size;
+	return (UINT32)(__ctru_heap_size - (size_t)mi.uordblks);
 }
 
 void I_StartupTimer(void)
