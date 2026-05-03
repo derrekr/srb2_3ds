@@ -49,6 +49,10 @@ extern INT32 msg_id;
 static INT32 S_AdjustSoundParams(const mobj_t *listener, const mobj_t *source, INT32 *vol, INT32 *sep, INT32 *pitch, sfxinfo_t *sfxinfo);
 #endif
 
+#ifdef _NDS
+#define NO_MIDI_MUSIC
+#endif
+
 CV_PossibleValue_t soundvolume_cons_t[] = {{0, "MIN"}, {31, "MAX"}, {0, NULL}};
 static void SetChannelsNum(void);
 static void Command_Tunes_f(void);
@@ -105,7 +109,11 @@ consvar_t cv_resetmusic = {"resetmusic", "No", CV_SAVE, CV_YesNo, NULL, 0, NULL,
 
 // Sound system toggles, saved into the config
 consvar_t cv_gamedigimusic = {"digimusic", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameDigiMusic_OnChange, 0, NULL, NULL, 0, 0, NULL};
+#ifdef NO_MIDI_MUSIC
+consvar_t cv_gamemidimusic = {"midimusic", "Off", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameMIDIMusic_OnChange, 0, NULL, NULL, 0, 0, NULL};
+#else
 consvar_t cv_gamemidimusic = {"midimusic", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameMIDIMusic_OnChange, 0, NULL, NULL, 0, 0, NULL};
+#endif
 consvar_t cv_gamesounds = {"sounds", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameSounds_OnChange, 0, NULL, NULL, 0, 0, NULL};
 
 #define S_MAX_VOLUME 127
@@ -1305,6 +1313,9 @@ boolean S_MusicInfo(char *mname, UINT16 *mflags, boolean *looping)
 
 boolean S_MusicExists(const char *mname, boolean checkMIDI, boolean checkDigi)
 {
+#ifdef NO_MIDI_MUSIC
+	checkMIDI = false;
+#endif
 	return (
 		(checkDigi ? W_CheckNumForName(va("O_%s", mname)) != LUMPERROR : false)
 		|| (checkMIDI ? W_CheckNumForName(va("D_%s", mname)) != LUMPERROR : false)
@@ -1363,18 +1374,28 @@ static boolean S_LoadMusic(const char *mname)
 
 	if (!S_DigMusicDisabled() && S_DigExists(mname))
 		mlumpnum = W_GetNumForName(va("o_%s", mname));
+#ifndef NO_MIDI_MUSIC
 	else if (!S_MIDIMusicDisabled() && S_MIDIExists(mname))
 		mlumpnum = W_GetNumForName(va("d_%s", mname));
+#endif
 	else if (S_DigMusicDisabled() && S_DigExists(mname))
 	{
 		CONS_Alert(CONS_NOTICE, "Digital music is disabled!\n");
 		return false;
 	}
+#ifndef NO_MIDI_MUSIC
 	else if (S_MIDIMusicDisabled() && S_MIDIExists(mname))
 	{
 		CONS_Alert(CONS_NOTICE, "MIDI music is disabled!\n");
 		return false;
 	}
+#else
+	else if (W_CheckNumForName(va("D_%s", mname)) != LUMPERROR)
+	{
+		CONS_Alert(CONS_NOTICE, "MIDI music is not supported on this platform!\n");
+		return false;
+	}
+#endif
 	else
 	{
 		CONS_Alert(CONS_ERROR, M_GetText("Music lump %.6s not found!\n"), mname);
@@ -1403,8 +1424,9 @@ static boolean S_LoadMusic(const char *mname)
 		music_data = mdata;
 		return true;
 	}
-	else
-		return false;
+
+	Z_Free(mdata);
+	return false;
 }
 
 static void S_UnloadMusic(void)
@@ -1806,6 +1828,13 @@ void GameDigiMusic_OnChange(void)
 
 void GameMIDIMusic_OnChange(void)
 {
+#ifdef NO_MIDI_MUSIC
+	midi_disabled = true;
+	if (cv_gamemidimusic.value)
+		CV_StealthSet(&cv_gamemidimusic, "Off");
+	return;
+#endif
+
 	if (M_CheckParm("-nomusic"))
 		return;
 	else if (M_CheckParm("-nomidimusic"))

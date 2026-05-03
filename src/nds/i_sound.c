@@ -1,4 +1,5 @@
 #include <3ds.h>
+#include <string.h>
 #include <SDL.h>
 #include <SDL_mixer.h>
 #include "../doomdef.h"
@@ -26,6 +27,13 @@ static Mix_Music *music;
 static UINT8 music_volume, sfx_volume;
 static double loop_point;
 static boolean songpaused;
+
+static inline bool isSequencedMusic(const char *data, size_t len)
+{
+	return len >= 4
+		&& (!memcmp(data, "MThd", 4)
+			|| !memcmp(data, "MUS\x1a", 4));
+}
 
 
 static void SoundDriverInit(void)
@@ -516,6 +524,12 @@ boolean I_LoadSong(char *data, size_t len)
 
 	if (music)
 		I_UnloadSong();
+
+	if (isSequencedMusic(data, len))
+	{
+		CONS_Alert(CONS_NOTICE, "MIDI music is not supported on 3DS.\n");
+		return false;
+	}
 
 	rw = SDL_RWFromMem(data, len);
 	if (rw != NULL)

@@ -129,7 +129,11 @@ INT32 postimgparam2;
 boolean midi_disabled = true, sound_disabled = true;
 boolean digital_disabled = true;
 #else
+#ifdef _NDS
+boolean midi_disabled = true;
+#else
 boolean midi_disabled = false;
+#endif
 boolean sound_disabled = false;
 boolean digital_disabled = false;
 #endif
@@ -1241,6 +1245,9 @@ void D_SRB2Main(void)
 		if (M_CheckParm("-nodigmusic"))
 			digital_disabled = true; // WARNING: DOS version initmusic in I_StartupSound
 	}
+#ifdef _NDS
+	midi_disabled = true;
+#endif
 	I_StartupSound();
 	I_InitMusic();
 	S_InitSfxChannels(cv_soundvolume.value);

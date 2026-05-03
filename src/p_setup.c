@@ -3265,8 +3265,12 @@ boolean P_AddWadFile(const char *wadfilename)
 			}
 			else if (name[1] == '_')
 			{
+#ifndef _NDS
 				CONS_Debug(DBG_SETUP, "Music %.8s replaced\n", name);
 				mreplaces++;
+#else
+				CONS_Debug(DBG_SETUP, "Ignoring unsupported MIDI music %.8s\n", name);
+#endif
 			}
 		}
 		else if (name[0] == 'O' && name[1] == '_')

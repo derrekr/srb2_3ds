@@ -90,6 +90,19 @@ typedef struct
 	size_t len;
 } lumpchecklist_t;
 
+#ifdef _NDS
+static inline boolean W_SkipUnsupportedLumpName(const char *name)
+{
+	return toupper((unsigned char)name[0]) == 'D' && name[1] == '_';
+}
+#else
+static inline boolean W_SkipUnsupportedLumpName(const char *name)
+{
+	(void)name;
+	return false;
+}
+#endif
+
 // Must be a power of two
 #define LUMPNUMCACHESIZE 64
 
@@ -398,12 +411,18 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
 		return NULL;
 	}
 
-	numlumps = header.numlumps;
+	numlumps = 0;
+	for (i = 0; i < header.numlumps; i++)
+		if (!W_SkipUnsupportedLumpName(fileinfo[i].name))
+			numlumps++;
 
 	// fill in lumpinfo for this wad
 	lump_p = lumpinfo = Z_Malloc(numlumps * sizeof (*lumpinfo), PU_STATIC, NULL);
-	for (i = 0; i < numlumps; i++, lump_p++, fileinfo++)
+	for (i = 0; i < header.numlumps; i++, fileinfo++)
 	{
+		if (W_SkipUnsupportedLumpName(fileinfo->name))
+			continue;
+
 		lump_p->position = LONG(fileinfo->filepos);
 		lump_p->size = lump_p->disksize = LONG(fileinfo->size);
 		if (compressed) // wad is compressed, lump might be
@@ -439,6 +458,7 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
 		lump_p->name2 = Z_Malloc(9 * sizeof(char), PU_STATIC, NULL);
 		strncpy(lump_p->name2, fileinfo->name, 8);
 		lump_p->name2[8] = '\0';
+		lump_p++;
 	}
 	free(fileinfov);
 	*nlmp = numlumps;
@@ -561,7 +581,7 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 	zentry = zentries = malloc(numlumps * sizeof (*zentries));
 
 	fseek(handle, zend.cdiroffset, SEEK_SET);
-	for (i = 0; i < numlumps; i++, zentry++, lump_p++)
+	for (i = 0; i < numlumps; i++, zentry++)
 	{
 		char* fullname;
 		char* trimname;
@@ -581,10 +601,6 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 			free(zentries);
 			return NULL;
 		}
-
-		lump_p->position = zentry->offset + zentry->namelen + zentry->xtralen + sizeof(zlentry_t);
-		lump_p->disksize = zentry->compsize;
-		lump_p->size = zentry->size;
 
 		fullname = malloc(zentry->namelen + 1);
 		if (fgets(fullname, zentry->namelen + 1, handle) != fullname)
@@ -608,10 +624,18 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 		memset(lump_p->name, '\0', 9); // Making sure they're initialized to 0. Is it necessary?
 		strncpy(lump_p->name, trimname, min(8, dotpos - trimname));
 
+		if (W_SkipUnsupportedLumpName(lump_p->name))
+		{
+			free(fullname);
+			continue;
+		}
+
+		lump_p->position = zentry->offset + zentry->namelen + zentry->xtralen + sizeof(zlentry_t);
+		lump_p->disksize = zentry->compsize;
+		lump_p->size = zentry->size;
+
 		lump_p->name2 = Z_Calloc(zentry->namelen + 1, PU_STATIC, NULL);
 		strncpy(lump_p->name2, fullname, zentry->namelen);
-
-		free(fullname);
 
 		switch(zentry->compression)
 		{
@@ -631,11 +655,22 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
 			lump_p->compression = CM_UNSUPPORTED;
 			break;
 		}
+
+		free(fullname);
+		lump_p++;
 	}
 
 	free(zentries);
 
-	*nlmp = numlumps;
+	*nlmp = (UINT16)(lump_p - lumpinfo);
+	if (*nlmp == 0)
+	{
+		Z_Free(lumpinfo);
+		lumpinfo = Z_Calloc(sizeof (*lumpinfo), PU_STATIC, NULL);
+	}
+	else if (*nlmp < numlumps)
+		lumpinfo = Z_Realloc(lumpinfo, *nlmp * sizeof (*lumpinfo), PU_STATIC, NULL);
+
 	return lumpinfo;
 }
 
@@ -657,10 +692,12 @@ UINT16 W_InitFile(const char *filename)
 	wadfile_t *wadfile;
 	restype_t type;
 	UINT16 numlumps = 0;
-	size_t i;
 	size_t packetsize;
 	UINT8 md5sum[16];
 	boolean important;
+#ifndef NOMD5
+	size_t i;
+#endif
 
 	if (!(refreshdirmenu & REFRESHDIR_ADDFILE))
 		refreshdirmenu = REFRESHDIR_NORMAL|REFRESHDIR_ADDFILE; // clean out cons_alerts that happened earlier
@@ -774,7 +811,7 @@ UINT16 W_InitFile(const char *filename)
 	//
 	// set up caching
 	//
-	Z_Calloc(numlumps * sizeof (*wadfile->lumpcache), PU_STATIC, &wadfile->lumpcache);
+	Z_Calloc((numlumps ? numlumps : 1) * sizeof (*wadfile->lumpcache), PU_STATIC, &wadfile->lumpcache);
 
 #ifdef HWRENDER
 	// allocates GLPatch info structures and store them in a tree
@@ -896,7 +933,7 @@ static boolean TestValidLump(UINT16 wad, UINT16 lump)
 
 const char *W_CheckNameForNumPwad(UINT16 wad, UINT16 lump)
 {
-	if (lump >= wadfiles[wad]->numlumps || !TestValidLump(wad, 0))
+	if (wad >= MAX_WADFILES || !wadfiles[wad] || lump >= wadfiles[wad]->numlumps)
 		return NULL;
 
 	return wadfiles[wad]->lumpinfo[lump].name;
@@ -924,7 +961,7 @@ UINT16 W_CheckNumForNamePwad(const char *name, UINT16 wad, UINT16 startlump)
 	uname[8] = 0;
 	strupr(uname);
 
-	if (!TestValidLump(wad,0))
+	if (wad >= MAX_WADFILES || !wadfiles[wad])
 		return INT16_MAX;
 
 	//
