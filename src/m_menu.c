@@ -1111,15 +1111,19 @@ static menuitem_t OP_VideoOptionsMenu[] =
 	{IT_STRING|IT_CVAR,      NULL, "Fullscreen",          &cv_fullscreen,    30},
 #endif
 
+#if !defined(_NDS)
 	{IT_STRING | IT_CVAR | IT_CV_SLIDER,
 	                         NULL, "Brightness",          &cv_usegamma,      50},
+#endif
 	{IT_STRING | IT_CVAR,    NULL, "Draw Distance",       &cv_drawdist, 60},
 	{IT_STRING | IT_CVAR,    NULL, "NiGHTS Draw Dist",    &cv_drawdist_nights, 70},
 	{IT_STRING | IT_CVAR,    NULL, "Precip Draw Dist",    &cv_drawdist_precip, 80},
 	{IT_STRING | IT_CVAR,    NULL, "Precip Density",      &cv_precipdensity, 90},
 
 	{IT_STRING | IT_CVAR,    NULL, "Show FPS",            &cv_ticrate,    110},
+#if !defined(_NDS)
 	{IT_STRING | IT_CVAR,    NULL, "Clear Before Redraw", &cv_homremoval, 120},
+#endif
 #if !defined(_NDS)
 	{IT_STRING | IT_CVAR,    NULL, "Vertical Sync",       &cv_vidwait,    130},
 #endif
@@ -1139,8 +1143,8 @@ extern consvar_t cv_3dsprecache;
 static menuitem_t OP_OpenGLOptionsMenu[] =
 {
 	{IT_STRING|IT_CVAR,         NULL, "Field of view",   &cv_grfov,            10},
-	{IT_STRING|IT_CVAR,         NULL, "Quality",         &cv_scr_depth,        20},
 #if !defined (_NDS)
+	{IT_STRING|IT_CVAR,         NULL, "Quality",         &cv_scr_depth,        20},
 	{IT_STRING|IT_CVAR,         NULL, "Texture Filter",  &cv_grfiltermode,     30},
 	{IT_STRING|IT_CVAR,         NULL, "Anisotropic",     &cv_granisotropicmode,70},
 #else
@@ -1149,7 +1153,6 @@ static menuitem_t OP_OpenGLOptionsMenu[] =
 	{IT_STRING|IT_CVAR,         NULL, "Disable Bottom Screen",  &cv_3dsdisablebottom,    50},
 	{IT_STRING|IT_CVAR,         NULL, "Color Format",  &cv_3dsrtformat,    60},
 	{IT_STRING|IT_CVAR,         NULL, "Precache Textures",  &cv_3dsprecache,    70},
-	{IT_STRING|IT_CVAR,         NULL, "Anisotropic",     &cv_granisotropicmode,80},
 #endif
 #ifdef _WINDOWS
 	{IT_STRING|IT_CVAR,         NULL, "Fullscreen",      &cv_fullscreen,       80},
