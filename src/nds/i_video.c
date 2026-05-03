@@ -59,9 +59,9 @@ extern consvar_t cv_ticrate;
 
 consvar_t cv_3dswidemode = {"gr_3dswidemode", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 
-CV_PossibleValue_t CV_3dsfoclen[] = {{50, "1"}, {60, "2"}, {70, "3"}, {80, "4"},
-	{90, "5"}, {100, "6"}, {110, "7"}, {120, "8"}, {130, "9"}, {140, "10"}, {150, "11"},
-	{160, "12"}, {170, "13"}, {180, "14"}, {190, "15"}, {200, "16"},{0, NULL}};
+CV_PossibleValue_t CV_3dsfoclen[] = {{60, "1"}, {70, "2"}, {80, "3"},
+	{90, "4"}, {100, "5"}, {110, "6"}, {120, "7"}, {130, "8"}, {140, "9"}, {150, "10"},
+	{160, "11"}, {170, "12"}, {180, "13"}, {190, "14"}, {200, "15"},{0, NULL}};
 consvar_t cv_3dsfoclen = {"gr_3dsfoclen", "5", CV_SAVE, CV_3dsfoclen,
                              NULL, 0, NULL, NULL, 0, 0, NULL};
 

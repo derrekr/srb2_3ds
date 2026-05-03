@@ -105,6 +105,9 @@ typedef struct
 	INT32       splitscreen;
 #endif
 	boolean     flip;            // screenflip
+#ifdef _NDS
+	boolean     skyboxPass;      // 3DS: render this pass at zero stereo parallax (skybox/sky)
+#endif
 } FTransform;
 
 // Transformed vector, as passed to HWR API

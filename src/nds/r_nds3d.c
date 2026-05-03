@@ -1026,15 +1026,21 @@ void NDS3D_SetTransform(FTransform *ptransform)
 						C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, true);
 		*/
 		
+		// For sky passes, push the convergence plane very close to the camera so
+		// (1 - focal/z) ~= 1 for all skybox geometry, giving max behind-screen
+		// disparity = the user's IPD. The skybox lands at "infinity" depth instead
+		// of fighting world geometry. Using the user's iod (not zero) ensures both
+		// eyes get the full eye separation a far object would naturally produce.
+		float useFocal = ptransform->skyboxPass ? 0.01f : focalLength;
 		Mtx_PerspStereoTilt(&p, C3D_AngleFromDegrees(ptransform->fovxangle),
-					C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, iod, focalLength, true);
+					C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, iod, useFocal, true);
 
 		projection = &p;
 		modelView = &m;
 	}
 	else	/* reset transformation */
 	{
-		/* used in HUD and skybox */
+		/* used in HUD/2D */
 		Mtx_Identity(&p);
 		Mtx_PerspStereoTilt(&p, C3D_AngleFromDegrees(fov),
 					C3D_AspectRatioTop, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE, -iod, 1.0f, true);

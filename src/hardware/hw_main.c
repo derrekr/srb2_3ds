@@ -5792,6 +5792,9 @@ void HWR_RenderSkyboxView(INT32 viewnumber, player_t *player)
 #ifndef NOSPLITSCREEN
 	atransform.splitscreen = splitscreen;
 #endif
+#ifdef _NDS
+	atransform.skyboxPass = true;
+#endif
 
 	gr_fovlud = (float)(1.0l/tan((double)(fpov*M_PIl/360l)));
 
@@ -6015,6 +6018,9 @@ void HWR_RenderPlayerView(INT32 viewnumber, player_t *player)
 	atransform.fovyangle = fpov; // Tails
 #ifndef NOSPLITSCREEN
 	atransform.splitscreen = splitscreen;
+#endif
+#ifdef _NDS
+	atransform.skyboxPass = false;
 #endif
 
 	gr_fovlud = (float)(1.0l/tan((double)(fpov*M_PIl/360l)));
