@@ -122,6 +122,13 @@ void NDS3D_driverPanic(const char *s, ...)
 
 	paniced = true;
 
+	// Force the bottom-screen backlight on before printing so the user can
+	// actually read the panic message even if cv_3dsdisablebottom is set.
+	// Safe-guarded by gameStartedUp so it's a no-op pre-startup (when the
+	// boot console is on the bottom screen anyway).
+	extern void I_BottomScreenForceOn(void);
+	I_BottomScreenForceOn();
+
 	va_list args;
 	va_start(args, s);
 	vsnprintf(tmp, sizeof tmp, s, args);
@@ -129,10 +136,10 @@ void NDS3D_driverPanic(const char *s, ...)
 
 	NDS3D_driverLog("\n\n********* PANIC *********\n");
 	NDS3D_driverLog("%s\n", tmp);
-	
+
 	printf("\n\n********* PANIC *********\n");
 	printf("%s\n", tmp);
-	
+
 	Debug_break();
 	exit(-1);
 }
